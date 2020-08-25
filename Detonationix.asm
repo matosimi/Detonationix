@@ -45,6 +45,8 @@ xpos	equ $ab ;x position of tile
 ypos	equ $ac ;y position of tile
 ctype	equ $ad ;current tile type
 crotation	equ $ae ;current tile rotation
+stick	equ $af ;porta cut to 1 player
+ztmp	equ $b0 ;zero page temp
 
 
 	org code
@@ -77,15 +79,85 @@ game
 	draw_playfield
 	draw_stats
 	next_tile
+	next_tile
 	
-	mva #4 draw_tile.type
+	/*mva #4 draw_tile.type
 	mva #2 draw_tile.rotation
 	mva #10 xpos
 	sta ypos
 	draw_tile
-	jmp *
+	jmp **/
+	
+	;game loop
+	mva #4+4 xpos
+	mva #5 ypos
+loop	mva ctype draw_tile.type
+	mva crotation draw_tile.rotation
+	draw_tile
+	
+/*	lda 20
+	add #50
+	tax*/
+cloop	controls
+/*	cpx 20
+	bne cloop
+	*/
+	pause 10
+	jmp loop
+	
+.proc	controls
+	lda porta
+	lsr @
+	jcc up
+	lsr @
+	jcc down
+	lsr @
+	jcc left
+	lsr @
+	jcc right
+x0	rts
+	
+up	delete_tile
+	inc crotation
+	validate_tile
+	jeq ok
+	lda crotation
+	add #3
+	and #$03
+	sta crotation
+	rts
+	
+down	delete_tile
+	inc ypos
+	validate_tile
+	jeq ok
+	dec ypos	;revert
+	rts
+	
+left	delete_tile
+	dec xpos
+	validate_tile
+	jeq ok
+	inc xpos	;revert
+	rts
+	
+right	delete_tile
+	inc xpos
+	validate_tile
+	jeq ok
+	dec xpos
+	rts
+
+ok	draw_tile
+	rts
+
+.endp	
 	
 .proc	next_tile
+	inc draw_tile.save.delete
+	draw_tile
+	dec draw_tile.save.delete
+	
 	mva type ctype
 	mva rotation crotation
 x1	lda random
@@ -98,7 +170,7 @@ x1	lda random
 	sta rotation
 	sta draw_tile.rotation
 	
-	mva #21 xpos
+	mva #22 xpos
 	mva #6 ypos
 	draw_tile
 	rts
@@ -163,6 +235,22 @@ x1	mva (w1),y (w2),y
 	
 	dex
 	bpl x2
+	rts
+.endp
+
+.proc	delete_tile
+	inc draw_tile.save.delete
+	draw_tile
+	dec draw_tile.save.delete
+	rts
+.endp
+
+.proc	validate_tile
+	inc draw_tile.save.validate
+	mva #0 draw_tile.save.valid	;reset validation result
+	draw_tile
+	dec draw_tile.save.validate
+	lda draw_tile.save.valid
 	rts
 .endp
 
@@ -296,9 +384,34 @@ x0	rts
 .endp
 	
 .proc	save
-	sta $ffff,x
-ptr1	equ *-2
+	cmp #' '*
+	beq x0	;draw only those that are not empty
+	sta ztmp
+	lda delete
+	beq x1
+	;delete branch
+	lda #' '*
+	jmp x2
+x1	lda validate
+	beq x3
+	;validate branch
+	mwa ptr1 ptr2
+	lda $ffff,x
+ptr2	equ *-2
+	cmp #' '*
+	bne x4 ;invalid
 	rts
+	
+x3	lda ztmp
+x2	sta $ffff,x
+ptr1	equ *-2
+x0	rts
+x4	inc valid
+	rts
+	
+delete	dta 0	;1 = delete tile
+validate	dta 0	;1 = validate tile
+valid	dta 0	;>0 - invalid
 .endp
 
 	
@@ -390,18 +503,19 @@ lines
 
 gamedli	rti
 
-gamevbi	php
+gamevbi	phr
+	inc 20
 	mva >gamefont chbase
 	mva #$ec colpf0
 	mva #$e4 colpf0+1
 	mva #$38 colpf0+2
 	mva #$76 colpf0+3
 	mva #$00 colpf0+4
-	plp
+	plr
 	rti	
 	
 playfield
-:24	dta 'p          p'
+:24	dta 'p          p'*
 	dta 'rqqqqqqqqqqs'		
 
 ;3x3
