@@ -73,6 +73,12 @@ game
 	game_init
 	draw_background
 	draw_playfield
+	
+	mva #4 draw_tile.type
+	mva #2 draw_tile.rotation
+	mva #10 xpos
+	sta ypos
+	draw_tile
 	jmp *
 	
 .proc	draw_background
@@ -128,9 +134,9 @@ x1	mva (w1),y current,y
 	ldx type
 	lda rotation
 	jeq drawIt
-	x_lt #4 rotate3
+	x_lt #4 rot3
 	cpx #4
-	jeq rotate2
+	jeq rot2
 	rotate4
 	jmp drawIt
 rot2	rotate2
@@ -160,19 +166,19 @@ x0	rts
 	mva #4 ptr2
 	
 	ldy #0
-	lda current,y
 	ldx #0
-x1	save
+x1	lda current,y
+	save
 	iny
 	inx
 	cpx #4
 ptr2	equ *-1
 	bne x1
-	add16 #32 save.ptr1
-	lda ptr2
-	cmp #4*4
+	add16 #32-4 save.ptr1
+	cpy #4*4
 	beq x0	;done
 	
+	lda ptr2
 	add #4	;next line
 	sta ptr2
 	jmp x1
@@ -190,19 +196,19 @@ x0	rts
 	mva #3 ptr2
 	
 	ldy #0
-	lda current,y
 	ldx #0
-x1	save
+x1	lda current,y
+	save
 	iny
 	inx
 	cpx #3
 ptr2	equ *-1
 	bne x1
-	add16 #32 save.ptr1
-	lda ptr2
-	cmp #3*3
+	add16 #32-3 save.ptr1
+	cpy #3*3
 	beq x0	;done
 	
+	lda ptr2
 	add #3	;next line
 	sta ptr2
 	jmp x1
