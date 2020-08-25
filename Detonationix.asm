@@ -43,6 +43,8 @@ ntsctimer	equ $a9 ;6th frame counter
 level	equ $aa
 xpos	equ $ab ;x position of tile
 ypos	equ $ac ;y position of tile
+ctype	equ $ad ;current tile type
+crotation	equ $ae ;current tile rotation
 
 
 	org code
@@ -73,6 +75,8 @@ game
 	game_init
 	draw_background
 	draw_playfield
+	draw_stats
+	next_tile
 	
 	mva #4 draw_tile.type
 	mva #2 draw_tile.rotation
@@ -80,6 +84,27 @@ game
 	sta ypos
 	draw_tile
 	jmp *
+	
+.proc	next_tile
+	mva type ctype
+	mva rotation crotation
+x1	lda random
+	and #%00000111
+	a_ge #6 x1
+	sta type
+	sta draw_tile.type
+	lda random
+	and #$03
+	sta rotation
+	sta draw_tile.rotation
+	
+	mva #21 xpos
+	mva #6 ypos
+	draw_tile
+	rts
+type	dta 0
+rotation	dta 0
+.endp
 	
 .proc	draw_background
 	ldx #0
@@ -92,10 +117,41 @@ x1
 data	ins 'bg2_narr/bg2_narrow.scr'
 .endp
 	
+.proc	draw_stats
+	mwa #stats w1
+	mwa #vram+32*3+20 w2
+	ldx #19
+x2	ldy #7
+x1	mva (w1),y (w2),y
+	dey
+	bpl x1
+	
+	add16 #8 w1
+	add16 #32 w2
+	
+	dex
+	bpl x2
+	rts
+	
+stats	dta 'yqqqqqqz'
+	dta d'p NEXT p'
+:6	dta 'p      p'
+	dta 'rqqqqqqs'
+	dta 'yqqqqqqz'
+	dta d'pSCORE p'
+:2	dta 'p      p'
+	dta d'pSTAGE p'
+:2	dta 'p      p'
+	dta d'pGRAND p'
+	dta d'pSCORE p'
+	dta 'p      p'
+	dta 'rqqqqqqs'
+.endp
+	
 .proc	draw_playfield
 	
 	mwa #playfield+24 w1
-	mwa #vram+32*2+3 w2
+	mwa #vram+32*2+4 w2
 	ldx #22
 x2	ldy #11
 x1	mva (w1),y (w2),y
@@ -336,6 +392,11 @@ gamedli	rti
 
 gamevbi	php
 	mva >gamefont chbase
+	mva #$ec colpf0
+	mva #$e4 colpf0+1
+	mva #$38 colpf0+2
+	mva #$76 colpf0+3
+	mva #$00 colpf0+4
 	plp
 	rti	
 	
@@ -344,31 +405,31 @@ playfield
 	dta 'rqqqqqqqqqqs'		
 
 ;3x3
-tile0	dta '   '
-	dta ' tt'
-	dta 'tt '
+tile0	dta '   '*
+	dta ' tt'*
+	dta 'tt '*
 	
-tile1	dta '   '
-	dta 'tt '
-	dta ' tt'
+tile1	dta '   '*
+	dta 'tt '*
+	dta ' tt'*
 	
-tile2	dta '   '
-	dta 'ttt'
-	dta ' t '
+tile2	dta '   '*
+	dta 'ttt'*
+	dta ' t '*
 	
-tile3	dta ' t '
-	dta ' t '
-	dta ' tt'
+tile3	dta ' t '*
+	dta ' t '*
+	dta ' tt'*
 
 ;2x2	
-tile4	dta 'tt'
-	dta 'tt'
+tile4	dta 'tt'*
+	dta 'tt'*
 
 ;4x4	
-tile5	dta '  t '
-	dta '  t '
-	dta '  t '
-	dta '  t '
+tile5	dta '  t '*
+	dta '  t '*
+	dta '  t '*
+	dta '  t '*
 	
 .proc 	game_init	
 	mva #0 nmien
