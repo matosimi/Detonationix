@@ -41,7 +41,8 @@ w2	equ $a6 ;2bytes
 ntsc	equ $a8 ;0=pal,1=ntsc
 ntsctimer	equ $a9 ;6th frame counter
 level	equ $aa
-dbgcount	equ $ab ;debug clicker counter
+xpos	equ $ab ;x position of tile
+ypos	equ $ac ;y position of tile
 
 
 	org code
@@ -103,6 +104,228 @@ x1	mva (w1),y (w2),y
 	rts
 .endp
 
+.proc	draw_tile
+	ldx type
+	lda dsizes,x
+	tay
+	dey
+	
+	txa
+	asl @
+	tax
+	lda tiles,x
+	sta w1
+	lda tiles+1,x
+	sta w1+1
+	
+x1	mva (w1),y current,y
+	dey
+	bpl x1
+	
+	;lda bomb
+	;todo
+	
+	ldx type
+	lda rotation
+	jeq drawIt
+	x_lt #4 rotate3
+	cpx #4
+	jeq rotate2
+	rotate4
+	jmp drawIt
+rot2	rotate2
+	jmp drawIt
+rot3	rotate3	
+
+drawIt	
+	ldx type
+	x_lt #4 drw3
+	cpx #4 
+	jeq drw2
+	draw4
+	jmp x0
+drw2	draw2
+	jmp x0
+drw3	draw3
+	;jmp x0
+		
+x0	rts
+
+.proc	draw4
+	lda ypos
+	asl @
+	tax
+	mwa lines,x save.ptr1
+	add16 xpos save.ptr1
+	mva #4 ptr2
+	
+	ldy #0
+	lda current,y
+	ldx #0
+x1	save
+	iny
+	inx
+	cpx #4
+ptr2	equ *-1
+	bne x1
+	add16 #32 save.ptr1
+	lda ptr2
+	cmp #4*4
+	beq x0	;done
+	
+	add #4	;next line
+	sta ptr2
+	jmp x1
+	
+x0	rts
+
+.endp
+
+.proc	draw3
+	lda ypos
+	asl @
+	tax
+	mwa lines,x save.ptr1
+	add16 xpos save.ptr1
+	mva #3 ptr2
+	
+	ldy #0
+	lda current,y
+	ldx #0
+x1	save
+	iny
+	inx
+	cpx #3
+ptr2	equ *-1
+	bne x1
+	add16 #32 save.ptr1
+	lda ptr2
+	cmp #3*3
+	beq x0	;done
+	
+	add #3	;next line
+	sta ptr2
+	jmp x1
+	
+x0	rts
+
+.endp
+	
+.proc	draw2
+	lda ypos
+	asl @
+	tax
+	mwa lines,x save.ptr1
+	add16 xpos save.ptr1
+	
+	lda current
+	ldx #0
+	save
+	lda current+1
+	inx
+	save
+	lda current+2
+	ldx #32
+	save
+	lda current+3
+	inx
+	save
+	rts
+.endp
+	
+.proc	save
+	sta $ffff,x
+ptr1	equ *-2
+	rts
+.endp
+
+	
+.proc	rotate2
+	ldx rotation
+x1	mva current tmp
+	mva current+1 current
+	mva current+2 current+1
+	mva current+3 current+2
+	mva tmp current+3
+	dex
+	bne x1
+	rts
+tmp 	dta 0
+.endp
+
+.proc	rotate3
+	ldx rotation
+; 012
+; 345
+; 678	
+	;diagonals
+x1	mva current tmp
+	mva current+2 current
+	mva current+8 current+2
+	mva current+6 current+8
+	mva tmp current+6
+	
+	;orthogonals
+	mva current+1 tmp
+	mva current+5 current+1
+	mva current+7 current+5
+	mva current+3 current+7
+	mva tmp current+3 
+	
+	;4 is not moving at all
+	dex
+	bne x1
+	
+	rts
+tmp	dta 0
+.endp
+
+.proc	rotate4
+; 0123
+; 4567
+; 89ab
+; cdef
+	mva rotation rot_local
+
+x3	ldx #15
+x1	mva current,x tmp,x
+	dex
+	bpl x1
+	
+	ldx #15
+x2	lda matches,x
+	tay
+	mva tmp,y current,x
+	dex
+	bpl x2
+	
+	dec rot_local
+	bne x3
+	
+	rts
+matches	dta 3,7,$b,$f
+	dta 2,6,$a,$e
+	dta 1,5,9,$d
+	dta 0,4,8,$c
+tmp
+:16	dta 0
+rot_local	dta 0
+.endp
+
+	
+tiles	dta a(tile0,tile1,tile2,tile3,tile4,tile5)
+sizes	dta 3,3,3,3,2,4
+dsizes	dta 9,9,9,9,4,16
+type	dta 1
+rotation	dta 0
+current	
+:16	dta ' '
+
+.endp
+
+lines
+:25	dta a(vram+32*:1)
+
 gamedli	rti
 
 gamevbi	php
@@ -113,6 +336,33 @@ gamevbi	php
 playfield
 :24	dta 'p          p'
 	dta 'rqqqqqqqqqqs'		
+
+;3x3
+tile0	dta '   '
+	dta ' tt'
+	dta 'tt '
+	
+tile1	dta '   '
+	dta 'tt '
+	dta ' tt'
+	
+tile2	dta '   '
+	dta 'ttt'
+	dta ' t '
+	
+tile3	dta ' t '
+	dta ' t '
+	dta ' tt'
+
+;2x2	
+tile4	dta 'tt'
+	dta 'tt'
+
+;4x4	
+tile5	dta '  t '
+	dta '  t '
+	dta '  t '
+	dta '  t '
 	
 .proc 	game_init	
 	mva #0 nmien

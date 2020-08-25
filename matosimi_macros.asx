@@ -67,22 +67,22 @@ x1
 
 .macro	x_lt
 	cpx :1
-	bcc :2
+	jcc :2
 .endm
 
 .macro	x_ge
 	cpx :1
-	bcs :2
+	jcs :2
 .endm
 
 .macro	y_lt
 	cpy :1
-	bcc :2
+	jcc :2
 .endm
 
 .macro	y_ge
 	cpy :1
-	bcs :2
+	jcs :2
 .endm
 
 ;check if A stands out of interval
