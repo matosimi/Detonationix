@@ -47,6 +47,9 @@ ctype	equ $ad ;current tile type
 crotation	equ $ae ;current tile rotation
 stick	equ $af ;porta cut to 1 player
 ztmp	equ $b0 ;zero page temp
+speed	equ $b1 ;controls speed 
+speed_anc	equ $b2 ;speed anchor
+gravtick	equ $b3 ;gravity speed (level)
 
 
 	org code
@@ -89,23 +92,66 @@ game
 	jmp **/
 	
 	;game loop
+
+	mva #10 speed
+	mva 20 gravity.grav_anc	;starting counter for gravity
+	mva #40 gravtick
+	;init new tile
+	
 	mva #4+4 xpos
 	mva #5 ypos
-loop	mva ctype draw_tile.type
-	mva crotation draw_tile.rotation
-	draw_tile
+	mva ctype draw_tile.type
+loop	
+	;mva crotation draw_tile.rotation
+	;draw_tile
 	
-/*	lda 20
-	add #50
-	tax*/
+	lda 20
+	add speed
+	sta speed_anc
+	mva #1 controls.handled
 cloop	controls
-/*	cpx 20
+	gravity
+	
+	lda speed_anc
+	cmp 20
 	bne cloop
-	*/
-	pause 10
+	
 	jmp loop
+
+.proc	place_tile
+	draw_tile
+	next_tile
+	mva #4+4 xpos
+	mva #5 ypos
+	mva ctype draw_tile.type
+	mva #0 controls.handled
+	rts
+.endp
+	
+.proc	gravity
+	lda 20
+	cmp grav_anc
+	bne x0
+	
+	add gravtick
+	sta grav_anc	;set next gravity occurence
+	
+	delete_tile
+	inc ypos
+	validate_tile
+	jeq ok
+	dec ypos
+	place_tile
+	rts
+ok	draw_tile
+x0	rts
+grav_anc	dta 0
+.endp	
 	
 .proc	controls
+	lda handled
+	beq x0
+	
 	lda porta
 	lsr @
 	jcc up
@@ -119,12 +165,14 @@ x0	rts
 	
 up	delete_tile
 	inc crotation
+	mva crotation draw_tile.rotation
 	validate_tile
 	jeq ok
 	lda crotation
 	add #3
 	and #$03
 	sta crotation
+	sta draw_tile.rotation
 	rts
 	
 down	delete_tile
@@ -149,14 +197,15 @@ right	delete_tile
 	rts
 
 ok	draw_tile
+	mva #0 handled
 	rts
+	
+handled	dta 0
 
 .endp	
 	
 .proc	next_tile
-	inc draw_tile.save.delete
-	draw_tile
-	dec draw_tile.save.delete
+	draw_stats
 	
 	mva type ctype
 	mva rotation crotation
@@ -169,7 +218,7 @@ x1	lda random
 	and #$03
 	sta rotation
 	sta draw_tile.rotation
-	
+		
 	mva #22 xpos
 	mva #6 ypos
 	draw_tile
