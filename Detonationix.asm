@@ -176,6 +176,9 @@ cloop	controls
 	
 	lda speed_anc
 	cmp 20
+	beq loop
+	add #10
+	cmp 20
 	bne cloop
 	
 	jmp loop
@@ -896,7 +899,8 @@ tile5	dta '  t '*
 	dta '  t '*
 	dta '  t '*
 	
-.proc 	game_init	
+.proc 	game_init
+	sei	
 	mva #0 nmien
 	mva #$fe portb	;osrom off, basicrom off
 	mwa #NMI $fffa		
