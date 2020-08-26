@@ -31,7 +31,7 @@ vram	equ $1000
 vram2	equ $1400
 code	equ $2000
 msx	equ $9000
-player	equ $a100
+player	equ $a400
 
 ;variables
 vbi_ptr	equ $a0
@@ -61,14 +61,32 @@ C_BOMB		equ 'u'
 	org code
 .local	init
 	mwa #idl $230
-	mva #$0e $2c4
-	mva #$38 $2c5
-	mva #$34 $2c6
-	mva #$06 $2c8
+	mva #$26 $2c4
+	mva #$b8 $2c5
+	mva #$52 $2c6
+	mva #$00 $2c8
 	
 	pause 5
 	
 	mva #$ff portb ;turn on osrom a load next block
+	
+	;detect video system
+	mva #0 ntsc
+	sta ntsctimer
+	ldx 20
+	inx
+	inx
+x1	lda vcount
+	a_lt ntsc x2
+	sta ntsc
+x2	cpx 20
+	bne x1
+	lda ntsc
+	a_lt #140 sys_ntsc
+	mva #1 ntsc
+	rts
+sys_ntsc	mva #0 ntsc
+	
 	rts
 idl	dta $70,$70,$70,$48,a(gr3)
 :23	dta 8
@@ -77,7 +95,7 @@ idl	dta $70,$70,$70,$48,a(gr3)
 	dta $41,a(idl)
 .endl
 ;240 B
-gr3	;ins "dtnx.gr3"
+gr3	ins "dtnx.gr3",0,240
 	dta "       ABBUC Software Contest 2020         "
 game
 	ini code ;init
@@ -111,6 +129,7 @@ game
 
 	org game
 	game_init
+	rmt.init
 	draw_background
 	draw_playfield
 	draw_stats
@@ -670,6 +689,7 @@ gamevbi	phr
 	mva #$76 colpf0+3
 	mva #$00 colpf0+4
 :4	sta colpm0+:1
+	rmt.play
 	plr
 	rti	
 	
@@ -734,30 +754,29 @@ gamedl	dta $70,$70+$80
 :25	dta 4+$80
 	dta $41,a(gamedl)
 	
-/*
+
 	org msx
 	opt h-
-	ins "msx.rmt"
+	ins 'dtnx_9000.rmt'
 	opt h+
 	
 .local	rmt
-	STEREOMODE = 0 ;custom stereo mode
 	org player
 	icl 'rmtplayr.a65'
 	
+;play same independently on the video system (PAL/NTSC)
 .proc	play
 	lda ntsc
-	beq x1
+	bne vbpal
+	inc ntsctimer
 	lda ntsctimer
-	cmp #255 ;skip 1 frame because of ntsc
-	bne x1
-	rts
-	lda stop
-	beq x1
-	jsr rmt.RASTERMUSICTRACKER+9
-	rts
-x1	jsr rmt.RASTERMUSICTRACKER+3
-	rts
+	cmp #6
+	bne vbpal
+	mva #255 ntsctimer
+	jmp vbntsc
+	
+vbpal	jsr rmt.rmt_play 
+vbntsc	rts
 .endp
 
 .proc	init
