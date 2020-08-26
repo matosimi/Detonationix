@@ -51,14 +51,16 @@ speed	equ $b1 ;controls speed
 speed_anc	equ $b2 ;speed anchor
 gravtick	equ $b3 ;gravity speed (level)
 cbomb	equ $b4 ;current bomb
+bstor	equ $b5 ;bomb index storage
 
 C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
 C_BRICK		equ 't'*
 C_EMPTY		equ ' '*
 C_BOMB		equ 'u'
+C_DETONATION	equ 'v'
 
-debug_no_music	equ 1
+debug_no_music	equ 0
 
 	org code
 .local	init
@@ -93,12 +95,13 @@ sys_ntsc	mva #0 ntsc
 idl	dta $70,$70,$70,$48,a(gr3)
 :23	dta 8
 	dta $70
-	dta 2
+	dta $42,a(text)
+tptr	equ *-2
 	dta $41,a(idl)
 .endl
 ;240 B
 gr3	ins "dtnx.gr3",0,240
-	dta "       ABBUC Software Contest 2020         "
+text	dta "       ABBUC Software Contest 2020      "
 game
 	ini code ;init
 
@@ -130,6 +133,8 @@ game
 :24+1	dta $00
 
 	org game
+	info
+	
 	game_init
 	rmt.init
 	draw_background
@@ -175,12 +180,31 @@ cloop	controls
 	
 	jmp loop
 
+.proc	info
+	mwa #text2 init.tptr
+	ldx #5
+x1	pause 200
+	add16 #40 init.tptr
+	dex
+	bpl x1
+	
+	rts
+text2	dta " Created by Martin Simecek 25-26.8.2020 "
+text3	dta "    This is just preview version!       "
+text4	dta " Sorry, this time I was not able to     "
+text5	dta "       finish the game in time.         "
+text6	dta "           Enjoy anyway...              "
+text7	dta "      http://matosimi.atari.org         "	
+.endp
+
 .proc	place_tile
 	draw_tile
 	check_lines
+	lda check_lines.count
+	beq x1
+	detonate_bombs
 	
-	
-	next_tile
+x1	next_tile
 	mva #4+4 xpos
 	mva #2 ypos
 	mva ctype draw_tile.type
@@ -236,6 +260,7 @@ x1	add_bomb_to_buffer
 	tya
 	add w1
 	sta bomb_buffer,x
+	lda #0
 	adc w1+1
 	sta bomb_buffer+1,x
 	inc bomb_buffer_index
@@ -247,6 +272,79 @@ bomb_buffer
 :128	dta 0
 bomb_buffer_index
 	dta 0
+	
+.proc	detonate_bombs
+	ldy bomb_buffer_index
+	jeq x0	;nothing to detonate
+	
+	sty bstor
+	
+	ldx check_lines.count ;size of detonation
+	dex
+	mva xbt,x xblast
+	mva ybt,x yblast
+	mva wbt,x wblast
+	mva ylines,x ylinesup
+	mva hbt,x hblast
+	
+	mva #C_DETONATION draw_detonation.ptr1
+	
+x1	ldy bomb_buffer_index
+	jeq x00
+	dey
+	dey
+	sty bomb_buffer_index
+	mwa bomb_buffer,y w1
+	sub16 xblast w1	;left edge
+	sub16 ylinesup w1	;top-left edge
+	
+	draw_detonation
+	
+	jmp x1
+x0	rts
+x00	pause 50
+	ldy bstor
+	beq x0
+	mva #0 bstor
+	sty bomb_buffer_index
+	mva #C_EMPTY draw_detonation.ptr1
+	jmp x1
+
+ybt	dta 0,1,2,3
+xbt	dta 3,4,5,6
+ylines	dta 0,32,64,96
+wbt	dta 6,6,6,6 ;8,10,11	;width of the blast
+hbt	dta 1,3,5,7	;height of the blast
+xblast	dta 0
+yblast	dta 0
+wblast	dta 0
+hblast	dta 0
+ylinesup	dta 0
+.endp
+
+.proc	draw_detonation
+	ldx detonate_bombs.hblast
+x2	ldy detonate_bombs.wblast
+x1	lda (w1),y
+	cmp #C_EMPTY
+	beq x3
+	cmp #C_BRICK
+	beq x3
+	cmp #C_BOMB
+	beq x3
+	cmp #C_DETONATION
+	beq x3
+	jmp x4 ;do not draw blast outside playfield
+x3	lda #C_DETONATION
+ptr1	equ *-1
+	sta (w1),y
+x4	dey
+	bpl x1
+	add16 #32 w1
+	dex
+	bne x2
+	rts
+.endp
 	
 .proc	gravity
 	lda 20
@@ -756,6 +854,14 @@ gamevbi	phr
 	ift debug_no_music == 0
 	rmt.play
 	eif
+
+	ldx #7
+x1	lda random
+	ora #%01010101
+	sta gamefont+C_DETONATION*8,x
+	dex
+	bpl x1
+	
 	plr
 	rti	
 	

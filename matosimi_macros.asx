@@ -13,9 +13,9 @@ _x1	sta :2
 .macro	sub16 ' '
 	lda :2
 	sub :1
-	bcs x1
+	bcs ____x1
 	dec :2+1
-x1	sta :2
+____x1	sta :2
 .endm
 
 ;add two 16bit numbers, store result in latter
