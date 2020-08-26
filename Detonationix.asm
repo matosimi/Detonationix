@@ -1,4 +1,4 @@
-;DETONATIONIX 25.8.2020 - Abbuc 2020
+;DETONATIONIX 25-26.8.2020 - Abbuc 2020
 
 hposp0	equ $d000
 hposm0	equ $d004
@@ -58,6 +58,8 @@ C_BRICK		equ 't'*
 C_EMPTY		equ ' '*
 C_BOMB		equ 'u'
 
+debug_no_music	equ 1
+
 	org code
 .local	init
 	mwa #idl $230
@@ -66,7 +68,7 @@ C_BOMB		equ 'u'
 	mva #$52 $2c6
 	mva #$00 $2c8
 	
-	pause 5
+	pause 1
 	
 	mva #$ff portb ;turn on osrom a load next block
 	
@@ -154,8 +156,8 @@ game
 	;init new tile
 	
 	mva #4+4 xpos
-	mva #5 ypos
-	mva ctype draw_tile.type
+	mva #2 ypos
+	;mva ctype draw_tile.type
 loop	
 	;mva crotation draw_tile.rotation
 	;draw_tile
@@ -175,15 +177,76 @@ cloop	controls
 
 .proc	place_tile
 	draw_tile
+	check_lines
+	
+	
 	next_tile
 	mva #4+4 xpos
-	mva #5 ypos
+	mva #2 ypos
 	mva ctype draw_tile.type
 	mva crotation draw_tile.rotation
 	mva cbomb draw_tile.bomb
 	mva #0 controls.handled
 	rts
 .endp
+	
+.proc	check_lines
+	mva #0 count
+	sta bomb_buffer_index
+	
+	ldx #23*2
+x2	mwa lines,x w1
+	ldy #5
+x1	lda (w1),y
+	cmp #C_EMPTY
+	beq nextline
+x3	iny
+	cpy #16
+	bne x1
+	inc count
+	addbombs	
+nextline	dex
+	dex
+	cpx #4
+	bne x2
+	rts
+count	dta 0	
+.endp	
+
+.proc	addbombs
+	stx ztmp
+	
+x2	lda (w1),y
+	cmp #C_BOMB
+	beq x1
+x3	dey
+	cpy #4
+	bne x2
+	
+	ldx ztmp
+	rts
+
+x1	add_bomb_to_buffer
+	jmp x3	
+	
+.endp
+
+.proc	add_bomb_to_buffer
+	ldx bomb_buffer_index
+	tya
+	add w1
+	sta bomb_buffer,x
+	adc w1+1
+	sta bomb_buffer+1,x
+	inc bomb_buffer_index
+	inc bomb_buffer_index
+	rts
+.endp
+
+bomb_buffer
+:128	dta 0
+bomb_buffer_index
+	dta 0
 	
 .proc	gravity
 	lda 20
@@ -689,7 +752,10 @@ gamevbi	phr
 	mva #$76 colpf0+3
 	mva #$00 colpf0+4
 :4	sta colpm0+:1
+
+	ift debug_no_music == 0
 	rmt.play
+	eif
 	plr
 	rti	
 	
