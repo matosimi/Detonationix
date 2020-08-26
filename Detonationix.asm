@@ -50,7 +50,13 @@ ztmp	equ $b0 ;zero page temp
 speed	equ $b1 ;controls speed 
 speed_anc	equ $b2 ;speed anchor
 gravtick	equ $b3 ;gravity speed (level)
+cbomb	equ $b4 ;current bomb
 
+C_FULLBOMB	equ $ff
+C_NOBOMB		equ $f0
+C_BRICK		equ 't'*
+C_EMPTY		equ ' '*
+C_BOMB		equ 'u'
 
 	org code
 .local	init
@@ -124,6 +130,8 @@ cloop	controls
 	mva #4+4 xpos
 	mva #5 ypos
 	mva ctype draw_tile.type
+	mva crotation draw_tile.rotation
+	mva cbomb draw_tile.bomb
 	mva #0 controls.handled
 	rts
 .endp
@@ -209,6 +217,7 @@ handled	dta 0
 	
 	mva type ctype
 	mva rotation crotation
+	mva bomb cbomb
 x1	lda random
 	and #%00000111
 	a_ge #6 x1
@@ -218,6 +227,8 @@ x1	lda random
 	and #$03
 	sta rotation
 	sta draw_tile.rotation
+	
+	add_bomb
 		
 	mva #22 xpos
 	mva #6 ypos
@@ -225,6 +236,43 @@ x1	lda random
 	rts
 type	dta 0
 rotation	dta 0
+bomb	dta 0
+.endp
+	
+.proc	add_bomb
+	lda random
+	and #$07
+	beq fullbomb
+	and #$01
+	beq nobomb
+	;add single bomb
+	ldx next_tile.type
+	lda draw_tile.dsizes,x
+	sta size
+	txa
+	asl @
+	tax
+	mwa draw_tile.tiles,x w1 
+	
+x1	lda random
+	and #%00001111	;biggest size
+	a_ge size x1
+	tay
+	lda (w1),y
+	cmp #C_BRICK
+	bne x1	;if empty find another brick	
+	sty next_tile.bomb
+	sty draw_tile.bomb
+	rts
+	
+size	dta 0
+	
+nobomb	mva #C_NOBOMB draw_tile.bomb
+	sta next_tile.bomb
+	rts
+fullbomb	mva #C_FULLBOMB draw_tile.bomb
+	sta next_tile.bomb
+	rts
 .endp
 	
 .proc	draw_background
@@ -308,6 +356,7 @@ x1	mva (w1),y (w2),y
 	lda dsizes,x
 	tay
 	dey
+	sty size
 	
 	txa
 	asl @
@@ -321,10 +370,29 @@ x1	mva (w1),y current,y
 	dey
 	bpl x1
 	
-	;lda bomb
-	;todo
+	lda bomb
+	cmp #C_NOBOMB
+	beq x2
+	cmp #C_FULLBOMB
+	beq x3
+	;single bomb
+	tay
+	mva #C_BOMB current,y
+	jmp x2
+x3	;full bomb
+	ldy size
+x31	lda current,y
+	cmp #C_BRICK
+	beq x4
+	dey
+	bpl x31
+	jmp x2	
+x4	mva #C_BOMB current,y
+	dey
+	bpl x31
 	
-	ldx type
+	;end of bomb injection
+x2	ldx type
 	lda rotation
 	jeq drawIt
 	x_lt #4 rot3
@@ -542,6 +610,8 @@ sizes	dta 3,3,3,3,2,4
 dsizes	dta 9,9,9,9,4,16
 type	dta 1
 rotation	dta 0
+bomb	dta C_NOBOMB
+size	dta 0
 current	
 :16	dta ' '
 
