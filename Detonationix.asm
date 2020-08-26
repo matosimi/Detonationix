@@ -26,7 +26,7 @@ vcount	equ $d40b
 nmien	equ $d40e
 nmist	equ $d40f
 
-mypmbase	equ $0c00
+mypmbase	equ $4c00
 vram	equ $1000
 vram2	equ $1400
 code	equ $2000
@@ -82,6 +82,33 @@ gr3	;ins "dtnx.gr3"
 game
 	ini code ;init
 
+;quickhack
+	org mypmbase
+:38	dta $ff
+:218-33	dta $f0
+:9	dta $ff
+:33-9	dta $00
+
+;:256	dta $00
+:38	dta $ff
+:218-33	dta $00
+:9	dta $ff
+:33-9	dta $00
+
+:38+10	dta $ff
+:9*8-1	dta $f0
+:1	dta $ff
+:11*8-1	dta $f0
+:24	dta $ff
+:24+1	dta $00
+
+:38+10	dta $ff
+:9*8-1	dta $0f
+:1	dta $ff
+:11*8-1	dta $0f
+:24	dta $ff
+:24+1	dta $00
+
 	org game
 	game_init
 	draw_background
@@ -90,6 +117,9 @@ game
 	next_tile
 	next_tile
 	
+:4	mva #64+32*:1 hposp0+:1
+:4	mva #$18 colpm0+:1
+:4	mva #3 sizep0+:1
 	/*mva #4 draw_tile.type
 	mva #2 draw_tile.rotation
 	mva #10 xpos
@@ -620,7 +650,16 @@ current
 lines
 :25	dta a(vram+32*:1)
 
-gamedli	rti
+gamedli	phr
+	ldx vcount
+.rept 8	
+	sta wsync
+	lda pcolors,x 
+:4	sta colpm0+:1
+	inx
+.endr
+	plr
+	rti
 
 gamevbi	phr
 	inc 20
@@ -630,6 +669,7 @@ gamevbi	phr
 	mva #$38 colpf0+2
 	mva #$76 colpf0+3
 	mva #$00 colpf0+4
+:4	sta colpm0+:1
 	plr
 	rti	
 	
@@ -675,7 +715,7 @@ tile5	dta '  t '*
 	mva #32+1+12+16 dmactl
 	mva #$03 gractl
 	mva >mypmbase pmbase
-	;mva #1 sizep0+1
+	mva #4 prior
 	mva #8 consol
 	rts
 .endp
@@ -689,9 +729,9 @@ nmi_vbi	jmp (vbi_ptr)
 	
 	.align $400
 gamefont	ins 'deto.fnt'
-gamedl	dta $70,$70
-	dta $44,a(vram)
-:25	dta 4
+gamedl	dta $70,$70+$80
+	dta $44+$80,a(vram)
+:25	dta 4+$80
 	dta $41,a(gamedl)
 	
 /*
@@ -739,4 +779,15 @@ stop	dta 0
 	
 	
 */
+pcolors	
+;:32	dta 0
+C_LUM	equ $8
+.rept 14,#
+	dta :1*$10+C_LUM
+	dta [:1+1]*$10+C_LUM
+	dta :1*$10+C_LUM
+:6	dta [:1+1]*$10+C_LUM
+
+.endr
+
 	run game
