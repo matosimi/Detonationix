@@ -32,7 +32,7 @@ vcount	equ $d40b
 nmien	equ $d40e
 nmist	equ $d40f
 
-mypmbase	equ $4c00
+mypmbase	equ $7c00
 vram	equ $1000
 vram2	equ $1400
 code	equ $2000
@@ -58,6 +58,10 @@ speed_anc	equ $b2 ;speed anchor
 gravtick	equ $b3 ;gravity speed (level)
 cbomb	equ $b4 ;current bomb
 bstor	equ $b5 ;bomb index storage
+tag	equ $b6 ;used for floodfill
+tagcount	equ $b7 ;number of tagged
+tagcount2	equ $b8 ;number of tagged in single direction
+fftmp	equ $b9 ;floodfill temp
 
 C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
@@ -156,6 +160,8 @@ game
 	next_tile
 	
 	reset_score
+	
+	segmentation
 	
 :4	mva #64+32*:1 hposp0+:1
 :4	mva #$18 colpm0+:1
@@ -879,8 +885,19 @@ x1	lda random
 	rti	
 	
 playfield
+/*
 :24	dta 'p          p'*
 	dta 'rqqqqqqqqqqs'		
+*/
+:10	dta 'p   u      p'*
+	dta 'p  tutu    p'*
+	dta 'p  t   t u p'*
+	dta 'p  t t t u p'*
+	dta 'p  t   u   p'*
+:2	dta 'p   uu     p'*
+:8	dta 'ptt       tp'*
+	
+	dta 'rqqqqqqqqqqs'
 
 ;3x3
 tile0	dta '   '*
@@ -1089,6 +1106,147 @@ x3	inc gscore,x
 	jmp x2
 
 .endp
+
+;flood fill
+.proc	segmentation
+	;starting point
+	ldx #0
+	mwa #vram+2*32+5 w1
+	mva #"1" tag
+	ldy #0
+	;search for first filled byte
+x2	ldy #9
+x1	lda (w1),y
+	a_ge #C_BRICK found
+	;cmp #C_EMPTY
+	;bne found
+	dey
+	bpl x1
+	add16 #32 w1
+	inx
+	cpx #22
+	bne x2
+	
+	;done
+	jmp *
+	rts
+	
+found	stx last_y
+	sty last_x
+	mwa w1 w1_store
+	mwa #0 ffindex
+	
+	;begin tracing
+	tag_it
+	mva #0 tagcount
+traceloop	
+	;left
+l2	dey
+	bmi l1
+	tag_it
+	cmp tag
+	beq l2
+		
+l1	iny
+	;down
+d2	add16 #32 w1
+	inx
+	cpx #22
+	beq d1
+	tag_it
+	cmp tag
+	beq d2
+		
+d1	sub16 #32 w1
+	dex
+	;right
+r2	iny
+	y_ge #10 r1
+	tag_it
+	cmp tag
+	beq r2
+r1	dey
+	;up
+u2	sub16 #32 w1
+	dex
+	bmi u1
+	tag_it
+	cmp tag
+	beq u2	
+u1	add16 #32 w1
+	inx
+	
+	;go to previous direction change and continue
+	dec ffindex
+	lda ffindex
+	cmp #$ff
+	beq nextsegment
+	
+	ldx ffindex
+	mva w1lbuf,x w1
+	mva w1hbuf,x w1+1
+	lda ybuf,x
+	tay
+	lda xbuf,x
+	tax
+	jmp traceloop
+	
+nextsegment
+	inc tag
+	mwa w1_store w1
+	ldx last_y
+	ldy last_x
+	jmp x1
+
+	
+.proc	add_to_ffbuffer
+	stx fftmp
+	
+	ldx ffindex
+	mva w1 w1lbuf,x
+	mva w1+1 w1hbuf,x
+	mva fftmp xbuf,x
+	tya
+	sta ybuf,x
+	inc ffindex
+	
+	ldx fftmp
+	rts
+.endp
+	
+;returns A=tag if tagged
+.proc	tag_it
+	lda (w1),y
+	cmp #C_EMPTY
+	bne x1
+	rts
+	
+x1	cmp tag
+	bne x2
+	lda #0
+	rts
+	
+x2	mva tag (w1),y
+	inc tagcount
+	add_to_ffbuffer
+	rts
+.endp
+
+last_x	dta 0
+last_y	dta 0
+w1_store	dta 0,0
+
+w1lbuf	
+:256	dta 0
+w1hbuf	
+:256	dta 0
+xbuf	
+:256	dta 0
+ybuf
+:256	dta 0
+ffindex	dta 0
+.endp
+
 
 
 	org msx
