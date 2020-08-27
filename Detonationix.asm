@@ -3,9 +3,9 @@
 ;TODOs:
 ; fix controls
 ; fix disappearance of tiles at edges
-; code sticky gravity
 ; add stages
 ; gameover
+; fix long(4) tile flicker
 hposp0	equ $d000
 hposm0	equ $d004
 sizep0	equ $d008
@@ -68,6 +68,8 @@ tag	equ $b6 ;used for floodfill
 tagcount	equ $b7 ;number of tagged
 tagcount2	equ $b8 ;number of tagged in single direction
 fftmp	equ $b9 ;floodfill temp
+gover	equ $ba ;1=game is over
+
 
 C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
@@ -151,7 +153,9 @@ game
 :24+1	dta $00
 
 	org game
-	info
+.local	game_cycle
+
+title	info
 	
 	game_init
 	rmt.init
@@ -167,6 +171,10 @@ game
 	next_tile
 	
 	reset_score
+	mva #0 gover
+	
+	;game_over
+	;next_stage
 	
 	
 
@@ -187,11 +195,15 @@ game
 	mva #4+4 xpos
 	mva #2 ypos
 	;mva ctype draw_tile.type
-loop	
-	;mva crotation draw_tile.rotation
-	;draw_tile
+loop	lda gover
+	beq x1
+	;game over sequence
+	game_over
+	trigger_push_release
+	jmp title
 	
-	lda 20
+	
+x1	lda 20
 	add speed
 	sta speed_anc
 	mva #1 controls.handled
@@ -206,6 +218,7 @@ cloop	controls
 	bne cloop
 	
 	jmp loop
+.endl
 
 .proc	place_tile
 	draw_tile
@@ -228,7 +241,10 @@ x1	next_tile
 	mva crotation draw_tile.rotation
 	mva cbomb draw_tile.bomb
 	mva #0 controls.handled
-	rts
+	validate_tile
+	jeq ok
+	mva #1 gover ;game over
+ok	rts
 .endp
 	
 .proc	check_lines
@@ -993,6 +1009,15 @@ titledl
 	dta $70,$70,4,$70,$70,4
 	dta $41,a(titledl)
 
+;wait for push and release of trigger
+.proc	trigger_push_release
+x1	lda trig0
+	bne x1
+x2	lda trig0
+	beq x2
+	rts
+.endp
+
 ;title screen	
 .proc	info
 	pause 1
@@ -1007,9 +1032,7 @@ titledl
 	mva #32+12+16+1 dmactl
 	
 	ift debug_skip_title == 0
-x1	lda trig0
-	cmp #0
-	bne x1
+	trigger_push_release
 	eif
 	
 	rts
@@ -1019,6 +1042,7 @@ titlevbi	pha
 	mva >titlefont chbase
 	mva #$f2 colpf0+2
 	mva #$0c colpf0+1
+	jsr rmt.rmt_silence
 	pla
 	rti
 
@@ -1085,14 +1109,16 @@ x2	dec score,x
 	
 x1	dex
 	lda score,x
-	cmp #" "*
+	cmp #"0"*
 	beq gameover
 	mva #"9"* score+1,x
 	dec gravtick ;speed up gravity
+	dec gravtick
 	jmp x2
 	
-gameover	;todo
-	jmp *		
+gameover	mva #"0"* score+1,x
+	mva #1 gover
+	rts	
 .endp
 
 .proc	add_gscore
@@ -1346,6 +1372,62 @@ x1:1
 .endp
 .endp
 
+.proc	fill_playfield
+	mwa #vram+2*32+5 w1
+	ldx #22
+x2	ldy #9
+	lda #C_BRICK
+character	equ *-1	
+x1	sta (w1),y
+	dey
+	bpl x1
+	
+	pause 2
+	
+	add16 #32 w1
+	dex
+	bne x2
+	rts
+.endp	
+
+.proc	next_stage
+	mva #":" fill_playfield.character
+	fill_playfield
+	inc_stage
+	add_gscore
+	reset_score
+	mva #C_EMPTY fill_playfield.character
+	fill_playfield
+	rts
+.endp	
+	
+.proc	game_over
+	mva #C_BRICK fill_playfield.character
+	fill_playfield
+	
+	mva #4 lines
+	
+	mwa #vram+11*32+7 w1
+	ldx #5
+x4	ldy #5
+x3	mva text,x (w1),y
+	dex
+	dey
+	bpl x3
+	add16 #32 w1
+	txa
+	add #6+6
+	tax
+	dec lines
+	bne x4
+	
+	rts
+lines	dta 4	
+text	dta d"      "
+	dta d" GAME "
+	dta d" OVER "
+	dta d"      "
+.endp
 
 
 	org msx
