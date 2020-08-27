@@ -35,6 +35,12 @@ nmist	equ $d40f
 mypmbase	equ $7c00
 vram	equ $1000
 vram2	equ $1400
+
+w1lbuf	equ $1800
+w1hbuf	equ $1900
+xbuf	equ $1a00
+ybuf	equ $1b00
+
 code	equ $2000
 msx	equ $9000
 player	equ $a400
@@ -161,7 +167,12 @@ game
 	
 	reset_score
 	
+gravloop
 	segmentation
+	sticky_gravity
+	pause 50
+	cmp #0 ;nothing felt
+	bne gravloop
 	
 :4	mva #64+32*:1 hposp0+:1
 :4	mva #$18 colpm0+:1
@@ -873,6 +884,8 @@ gamevbi	phr
 	ift debug_no_music == 0
 	rmt.play
 	eif
+	
+	switch_vram
 
 	ldx #7
 x1	lda random
@@ -955,7 +968,8 @@ nmi_vbi	jmp (vbi_ptr)
 gamefont	ins 'deto.fnt'
 titlefont	ins 'title\detx_title.fnt'
 gamedl	dta $70,$70+$80
-	dta $44+$80,a(vram)
+	dta $44+$80
+gdvrptr	dta a(vram)
 :25	dta 4+$80
 	dta $41,a(gamedl)
 	
@@ -1107,11 +1121,25 @@ x3	inc gscore,x
 
 .endp
 
+.proc	switch_vram
+	lda gdvrptr+1	;gamedl vram pointer - hi
+	eor #$04
+	sta gdvrptr+1
+	rts
+.endp
+
 ;flood fill
 .proc	segmentation
-	;starting point
+	;copy vram
 	ldx #0
-	mwa #vram+2*32+5 w1
+x20	
+:4	mva vram+:1*$100,x vram2+:1*$100,x
+	inx
+	bne x20
+
+	;starting point - running on vram copy (vram2)
+	ldx #0
+	mwa #vram2+2*32+5 w1
 	mva #"1" tag
 	ldy #0
 	;search for first filled byte
@@ -1128,13 +1156,12 @@ x1	lda (w1),y
 	bne x2
 	
 	;done
-	jmp *
 	rts
 	
 found	stx last_y
 	sty last_x
 	mwa w1 w1_store
-	mwa #0 ffindex
+	mva #0 ffindex
 	
 	;begin tracing
 	tag_it
@@ -1235,7 +1262,7 @@ x2	mva tag (w1),y
 last_x	dta 0
 last_y	dta 0
 w1_store	dta 0,0
-
+/*
 w1lbuf	
 :256	dta 0
 w1hbuf	
@@ -1243,8 +1270,67 @@ w1hbuf
 xbuf	
 :256	dta 0
 ybuf
-:256	dta 0
+:256	dta 0*/
 ffindex	dta 0
+.endp
+
+;moves down each segment that does not touch bottom line
+;returns number of bricks that felt in A
+.proc	sticky_gravity
+	mwa #vram2+(2+21)*32+5 w2	;bottom line
+	mva #0 tag ;counter of falling bricks
+	ldy #9
+x2	lda (w2),y
+	cmp #C_EMPTY
+	beq x1
+	delete_current_segment
+x1	dey
+	bpl x2
+	;only falling segments remained, so move them down	
+	mwa #vram2+(2+20)*32+5 w2	;bottom line-1
+	mwa #vram+(2+20)*32+5 w1
+	ldx #20
+x5	ldy #9
+x4	lda (w2),y
+	cmp #C_EMPTY
+	beq x3
+	lda (w1),y
+	sta fftmp
+	tya
+	ora #32
+	tay
+	lda fftmp
+	sta (w1),y
+	tya
+	and #$0f
+	tay
+	mva #C_EMPTY (w1),y
+	inc tag
+	
+x3	dey
+	bpl x4
+	sub16 #32 w1
+	sub16 #32 w2
+	dex
+	bpl x5
+	lda tag	
+	rts
+
+.proc	delete_current_segment
+	sta tag
+	ldx #0
+x2	
+.rept 4,#
+	lda vram2+:1*$100,x
+	cmp tag
+	bne x1:1
+	mva #C_EMPTY vram2+:1*$100,x	
+x1:1	
+.endr
+	dex
+	bne x2
+	rts
+.endp
 .endp
 
 
