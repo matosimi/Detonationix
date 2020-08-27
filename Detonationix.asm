@@ -183,23 +183,6 @@ cloop	controls
 	
 	jmp loop
 
-.proc	info
-	mwa #text2 init.tptr
-	ldx #5
-x1	pause 200
-	add16 #40 init.tptr
-	dex
-	bpl x1
-	
-	rts
-text2	dta " Created by Martin Simecek 25-26.8.2020 "
-text3	dta "    This is just preview version!       "
-text4	dta " Sorry, this time I was not able to     "
-text5	dta "       finish the game in time.         "
-text6	dta "           Enjoy anyway...              "
-text7	dta "      http://matosimi.atari.org         "	
-.endp
-
 .proc	place_tile
 	draw_tile
 	check_lines
@@ -900,10 +883,7 @@ tile5	dta '  t '*
 	dta '  t '*
 	
 .proc 	game_init
-	sei	
-	mva #0 nmien
-	mva #$fe portb	;osrom off, basicrom off
-	mwa #NMI $fffa		
+			
 	mwa #gamedl dlistl
 	mwa #gamedli dli_ptr
 	mwa #gamevbi vbi_ptr
@@ -925,11 +905,65 @@ nmi_vbi	jmp (vbi_ptr)
 	
 	.align $400
 gamefont	ins 'deto.fnt'
+titlefont	ins 'title\detx_title.fnt'
 gamedl	dta $70,$70+$80
 	dta $44+$80,a(vram)
 :25	dta 4+$80
 	dta $41,a(gamedl)
 	
+titledl	
+:7	dta $70
+	dta $42,a(titvram)
+:7	dta 2
+	dta $F0,$44,a(texts)
+	dta $70,$70,4,$70,$70,4
+	dta $41,a(titledl)
+
+;title screen	
+.proc	info
+	pause 1
+	sei	
+	mva #0 nmien
+	mva #$fe portb	;osrom off, basicrom off
+	mwa #NMI $fffa
+	mwa #titledli dli_ptr
+	mwa #titlevbi vbi_ptr
+	mwa #titledl dlistl
+	mva #$c0 nmien
+	mva #32+12+16+1 dmactl
+	
+x1	lda trig0
+	cmp #0
+	bne x1
+	
+	rts
+
+titlevbi	pha
+	inc 20
+	mva >titlefont chbase
+	mva #$f2 colpf0+2
+	mva #$0c colpf0+1
+	pla
+	rti
+
+titledli	pha
+	sta wsync
+	mva >gamefont chbase
+	mva #$22 colpf0+1
+	mva #$1c colpf0
+	sta colpf0+2
+	pla
+	rti
+.endp
+
+
+titvram	ins 'title\detx_title.scr'
+
+texts	dta "   CREATED BY MARTIN SIMECEK    "
+	
+	dta "   HTTP://MATOSIMI.ATARI.ORG    "	
+	
+	dta "  ABBUC SOFTWARE CONTEST 2020   "
 
 	org msx
 	opt h-
