@@ -1,5 +1,11 @@
 ;DETONATIONIX 25-26.8.2020 - Abbuc 2020
 
+;TODOs:
+; fix controls
+; fix disappearance of tiles at edges
+; code sticky gravity
+; add stages
+; gameover
 hposp0	equ $d000
 hposm0	equ $d004
 sizep0	equ $d008
@@ -60,7 +66,8 @@ C_EMPTY		equ ' '*
 C_BOMB		equ 'u'
 C_DETONATION	equ 'v'
 
-debug_no_music	equ 0
+debug_no_music	equ 1
+debug_skip_title	equ 1
 
 	org code
 .local	init
@@ -140,8 +147,15 @@ game
 	draw_background
 	draw_playfield
 	draw_stats
+	
+	reset_score
+	reset_gscore
+	reset_stage
+	
 	next_tile
 	next_tile
+	
+	reset_score
 	
 :4	mva #64+32*:1 hposp0+:1
 :4	mva #$18 colpm0+:1
@@ -409,7 +423,8 @@ handled	dta 0
 .endp	
 	
 .proc	next_tile
-	draw_stats
+	clear_next_window
+	dec_score
 	
 	mva type ctype
 	mva rotation crotation
@@ -481,6 +496,16 @@ x1
 	rts
 data	ins 'bg2_narr/bg2_narrow.scr'
 .endp
+
+.proc	clear_next_window
+	ldx #3
+	lda #C_EMPTY
+x1
+:4	sta vram+32*(5+:1)+22,x
+	dex
+	bpl x1
+	rts
+.endp
 	
 .proc	draw_stats
 	mwa #stats w1
@@ -498,19 +523,21 @@ x1	mva (w1),y (w2),y
 	bpl x2
 	rts
 	
-stats	dta 'yqqqqqqz'
-	dta d'p NEXT p'
-:6	dta 'p      p'
-	dta 'rqqqqqqs'
-	dta 'yqqqqqqz'
-	dta d'pSCORE p'
-:2	dta 'p      p'
-	dta d'pSTAGE p'
-:2	dta 'p      p'
-	dta d'pGRAND p'
-	dta d'pSCORE p'
-	dta 'p      p'
-	dta 'rqqqqqqs'
+stats	dta d'yqqqqqqz'*
+	dta d'p NEXT p'*
+:6	dta d'p      p'*
+	dta d'rqqqqqqs'*
+	dta d'yqqqqqqz'*
+	dta d'pSCORE p'*
+	dta d'p      p'*
+	dta d'p      p'*
+	dta d'pSTAGE p'*
+	dta d'p      p'*
+	dta d'p      p'*
+	dta d'pGRAND p'*
+	dta d'pSCORE p'*
+	dta d'p      p'*
+	dta d'rqqqqqqs'*
 .endp
 	
 .proc	draw_playfield
@@ -591,8 +618,8 @@ x4	mva #C_BOMB current,y
 x2	ldx type
 	lda rotation
 	jeq drawIt
-	x_lt #4 rot3
-	cpx #4
+	x_lt #5 rot3
+	cpx #5
 	jeq rot2
 	rotate4
 	jmp drawIt
@@ -602,8 +629,8 @@ rot3	rotate3
 
 drawIt	
 	ldx type
-	x_lt #4 drw3
-	cpx #4 
+	x_lt #5 drw3
+	cpx #5 
 	jeq drw2
 	draw4
 	jmp x0
@@ -801,9 +828,9 @@ rot_local	dta 0
 .endp
 
 	
-tiles	dta a(tile0,tile1,tile2,tile3,tile4,tile5)
-sizes	dta 3,3,3,3,2,4
-dsizes	dta 9,9,9,9,4,16
+tiles	dta a(tile0,tile1,tile2,tile3,tile4,tile5,tile6)
+sizes	dta 3,3,3,3,3,2,4
+dsizes	dta 9,9,9,9,9,4,16
 type	dta 1
 rotation	dta 0
 bomb	dta C_NOBOMB
@@ -872,12 +899,16 @@ tile3	dta ' t '*
 	dta ' t '*
 	dta ' tt'*
 
+tile4	dta ' t '*
+	dta ' t '*
+	dta 'tt '*
+	
 ;2x2	
-tile4	dta 'tt'*
+tile5	dta 'tt'*
 	dta 'tt'*
 
 ;4x4	
-tile5	dta '  t '*
+tile6	dta '  t '*
 	dta '  t '*
 	dta '  t '*
 	dta '  t '*
@@ -932,9 +963,11 @@ titledl
 	mva #$c0 nmien
 	mva #32+12+16+1 dmactl
 	
+	ift debug_skip_title == 0
 x1	lda trig0
 	cmp #0
 	bne x1
+	eif
 	
 	rts
 
@@ -964,6 +997,99 @@ texts	dta "   CREATED BY MARTIN SIMECEK    "
 	dta "   HTTP://MATOSIMI.ATARI.ORG    "	
 	
 	dta "  ABBUC SOFTWARE CONTEST 2020   "
+
+score	equ vram+32*14+21 ;leftmost char
+gscore 	equ vram+32*21+21 ;leftmost char
+stage	equ vram+32*17+26 ;last char
+
+.proc	reset_score
+	mva #"9"* score+4
+	sta score+5
+	rts
+.endp
+
+.proc	reset_stage
+	lda #"1"* 
+	sta stage
+	rts
+.endp
+
+.proc	reset_gscore
+	lda #"0"* 
+	sta gscore+5
+	rts
+.endp
+
+.proc	inc_stage
+	inc stage
+	lda stage
+	a_ge #"9"*+1 x1
+	rts
+x1	mva #"0"* stage
+	inc stage-1
+	lda stage-1
+	ora #$10
+	sta stage-1 
+	rts
+.endp
+
+.proc	dec_score
+	ldx #5
+x2	dec score,x
+	lda score,x
+	a_lt #"0"* x1
+	rts
+	
+x1	dex
+	lda score,x
+	cmp #" "*
+	beq gameover
+	mva #"9"* score+1,x
+	jmp x2
+	
+gameover	;todo
+	jmp *		
+.endp
+
+.proc	add_gscore
+	ldx #5
+x4	lda score,x
+	cmp #" "*
+	bne x5
+	lda #0
+x5	and #$0f
+	add gscore,x
+	and #$3f
+	a_ge #$1a x1
+	ora #$90
+	sta gscore,x
+	dex
+x2	cpx #$ff
+	bne x4
+	
+	;mask leading zeros
+x6	inx
+	lda gscore,x
+	cmp #"0"*
+	bne x0
+	mva #" "* gscore,x
+	jmp x6
+	
+x0	rts
+	
+x1	sub #10
+	ora #$90
+	sta gscore,x
+	dex
+	lda gscore,x
+	cmp #" "*
+	bne x3
+	mva #"0"* gscore,x
+x3	inc gscore,x
+	jmp x2
+
+.endp
+
 
 	org msx
 	opt h-
