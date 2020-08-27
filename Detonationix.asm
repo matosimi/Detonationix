@@ -2,9 +2,7 @@
 
 ;TODOs:
 ; fix controls
-; fix disappearance of tiles at edges
 ; add stages
-; gameover
 ; fix long(4) tile flicker
 hposp0	equ $d000
 hposm0	equ $d004
@@ -404,6 +402,10 @@ grav_anc	dta 0
 	beq x0
 	
 	lda porta
+	and #$0f
+	cmp #$0f
+	beq x0	
+	ldx:cpx:req 20
 	lsr @
 	jcc up
 	lsr @
@@ -424,31 +426,34 @@ up	delete_tile
 	and #$03
 	sta crotation
 	sta draw_tile.rotation
-	rts
+	jmp err
 	
 down	delete_tile
 	inc ypos
 	validate_tile
 	jeq ok
 	dec ypos	;revert
-	rts
+	jmp err
 	
 left	delete_tile
 	dec xpos
 	validate_tile
 	jeq ok
 	inc xpos	;revert
-	rts
+	jmp err
 	
 right	delete_tile
 	inc xpos
 	validate_tile
 	jeq ok
 	dec xpos
-	rts
+	jmp err
 
 ok	draw_tile
 	mva #0 handled
+	rts
+
+err	draw_tile
 	rts
 	
 handled	dta 0
