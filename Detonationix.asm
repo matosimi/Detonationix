@@ -3,7 +3,6 @@
 ;TODOs:
 ; fix controls
 ; add stages
-; fix long(4) tile flicker
 hposp0	equ $d000
 hposm0	equ $d004
 sizep0	equ $d008
@@ -344,7 +343,7 @@ x00	pause 25
 ybt	dta 0,1,2,3
 xbt	dta 3,4,5,6
 ylines	dta 0,32,64,96
-wbt	dta 6,6,6,6 ;8,10,11	;width of the blast
+wbt	dta 6,8,10,12	;width of the blast
 hbt	dta 1,3,5,7	;height of the blast
 xblast	dta 0
 yblast	dta 0
@@ -385,12 +384,20 @@ x4	dey
 	add gravtick
 	sta grav_anc	;set next gravity occurence
 	
+	pause 0	;removes flicker
 	delete_tile
 	inc ypos
 	validate_tile
 	jeq ok
 	dec ypos
 	place_tile
+	
+	;todo: tune this part - not working well..
+	lda 20
+	adc #5
+	sta speed_anc ;fixes delay after placement
+	sta grav_anc  ;fixes delay on next_tile
+	
 	rts
 ok	draw_tile
 x0	rts
@@ -405,7 +412,7 @@ grav_anc	dta 0
 	and #$0f
 	cmp #$0f
 	beq x0	
-	ldx:cpx:req 20
+	ldx:cpx:req 20	;removes flicker
 	lsr @
 	jcc up
 	lsr @
