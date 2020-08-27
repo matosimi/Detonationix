@@ -78,6 +78,7 @@ C_DETONATION	equ 'v'
 
 debug_no_music	equ 1
 debug_skip_title	equ 1
+debug_vram_flicker	equ 0
 
 	org code
 .local	init
@@ -167,16 +168,8 @@ game
 	
 	reset_score
 	
-gravloop
-	segmentation
-	sticky_gravity
-	pause 50
-	cmp #0 ;nothing felt
-	bne gravloop
 	
-:4	mva #64+32*:1 hposp0+:1
-:4	mva #$18 colpm0+:1
-:4	mva #3 sizep0+:1
+
 	/*mva #4 draw_tile.type
 	mva #2 draw_tile.rotation
 	mva #10 xpos
@@ -220,6 +213,13 @@ cloop	controls
 	lda check_lines.count
 	beq x1
 	detonate_bombs
+gravloop
+	segmentation
+	pause 3
+	sticky_gravity
+	cmp #0 ;nothing felt
+	bne gravloop
+
 	
 x1	next_tile
 	mva #4+4 xpos
@@ -319,7 +319,7 @@ x1	ldy bomb_buffer_index
 	
 	jmp x1
 x0	rts
-x00	pause 50
+x00	pause 25
 	ldy bstor
 	beq x0
 	mva #0 bstor
@@ -448,7 +448,7 @@ handled	dta 0
 	mva bomb cbomb
 x1	lda random
 	and #%00000111
-	a_ge #6 x1
+	a_ge #7 x1
 	sta type
 	sta draw_tile.type
 	lda random
@@ -518,7 +518,7 @@ data	ins 'bg2_narr/bg2_narrow.scr'
 	ldx #3
 	lda #C_EMPTY
 x1
-:4	sta vram+32*(5+:1)+22,x
+:4	sta vram+32*(6+:1)+22,x
 	dex
 	bpl x1
 	rts
@@ -872,7 +872,7 @@ gamedli	phr
 	rti
 
 gamevbi	phr
-	inc 20
+	;inc 20 - moved to rmt.play
 	mva >gamefont chbase
 	mva #$ec colpf0
 	mva #$e4 colpf0+1
@@ -883,9 +883,14 @@ gamevbi	phr
 
 	ift debug_no_music == 0
 	rmt.play
+	els
+	inc 20
 	eif
 	
+	
+	ift debug_vram_flicker == 1
 	switch_vram
+	eif
 
 	ldx #7
 x1	lda random
@@ -898,10 +903,12 @@ x1	lda random
 	rti	
 	
 playfield
-/*
+
 :24	dta 'p          p'*
 	dta 'rqqqqqqqqqqs'		
-*/
+
+
+/* test
 :10	dta 'p   u      p'*
 	dta 'p  tutu    p'*
 	dta 'p  t   t u p'*
@@ -911,6 +918,7 @@ playfield
 :8	dta 'ptt       tp'*
 	
 	dta 'rqqqqqqqqqqs'
+*/
 
 ;3x3
 tile0	dta '   '*
@@ -944,7 +952,7 @@ tile6	dta '  t '*
 	dta '  t '*
 	
 .proc 	game_init
-			
+	mva #0 nmien		
 	mwa #gamedl dlistl
 	mwa #gamedli dli_ptr
 	mwa #gamevbi vbi_ptr
@@ -954,6 +962,10 @@ tile6	dta '  t '*
 	mva >mypmbase pmbase
 	mva #4 prior
 	mva #8 consol
+	
+:4	mva #64+32*:1 hposp0+:1
+:4	mva #$18 colpm0+:1
+:4	mva #3 sizep0+:1
 	rts
 .endp
 	
@@ -1076,6 +1088,7 @@ x1	dex
 	cmp #" "*
 	beq gameover
 	mva #"9"* score+1,x
+	dec gravtick ;speed up gravity
 	jmp x2
 	
 gameover	;todo
@@ -1278,7 +1291,7 @@ ffindex	dta 0
 ;returns number of bricks that felt in A
 .proc	sticky_gravity
 	mwa #vram2+(2+21)*32+5 w2	;bottom line
-	mva #0 tag ;counter of falling bricks
+	mva #0 ztmp ;counter of falling bricks
 	ldy #9
 x2	lda (w2),y
 	cmp #C_EMPTY
@@ -1305,7 +1318,7 @@ x4	lda (w2),y
 	and #$0f
 	tay
 	mva #C_EMPTY (w1),y
-	inc tag
+	inc ztmp
 	
 x3	dey
 	bpl x4
@@ -1313,7 +1326,7 @@ x3	dey
 	sub16 #32 w2
 	dex
 	bpl x5
-	lda tag	
+	lda ztmp	
 	rts
 
 .proc	delete_current_segment
@@ -1355,7 +1368,8 @@ x1:1
 	mva #255 ntsctimer
 	jmp vbntsc
 	
-vbpal	jsr rmt.rmt_play 
+vbpal	inc 20
+	jsr rmt.rmt_play 
 vbntsc	rts
 .endp
 
