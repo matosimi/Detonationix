@@ -48,7 +48,7 @@ w1	equ $a4 ;2bytes
 w2	equ $a6 ;2bytes
 ntsc	equ $a8 ;0=pal,1=ntsc
 ntsctimer	equ $a9 ;6th frame counter
-level	equ $aa
+stageno	equ $aa ;current stage
 xpos	equ $ab ;x position of tile
 ypos	equ $ac ;y position of tile
 ctype	equ $ad ;current tile type
@@ -67,6 +67,7 @@ fftmp	equ $b9 ;floodfill temp
 gover	equ $ba ;1=game is over
 gcounter	equ $bb ;gravity counter (vbi)
 ccounter	equ $bc ;controls counter (vbi)
+leveldone	equ $bd ;0 if level is done
 
 C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
@@ -174,6 +175,7 @@ title	info
 	sta ccounter
 
 	mva #5 speed	;controls responsiveness
+	sta leveldone
 	mva #40 gravtick	;gravity speed
 	;init new tile
 	
@@ -190,9 +192,12 @@ loop	lda gover
 	game_over
 	trigger_push_release
 	jmp title
+x1	lda leveldone
+	bne x2
+	;next stage sequence
+	next_stage
 	
-	
-x1	mva #1 controls.handled
+x2	mva #1 controls.handled
 cloop	controls
 	gravity
 	
@@ -216,6 +221,7 @@ gravloop
 	cmp #0 ;nothing felt
 	bne gravloop
 
+	check_level_done
 	
 x1	next_tile
 	mva #4+4 xpos
@@ -444,7 +450,12 @@ down	delete_tile
 	dec ypos	;revert
 	jmp err
 dgrav	mva #0 gcounter	;reset gravity when forced move down
-	jmp ok
+	ldx speed
+	dex
+	stx ccounter	;makes falling faster than other controls
+	draw_tile
+	mva #0 handled
+	rts
 	
 left	delete_tile
 	dec xpos
@@ -605,6 +616,11 @@ x1	mva (w1),y (w2),y
 	
 	dex
 	bpl x2
+
+	mva #1 load_stage.noanim
+	load_stage
+	mva #0 load_stage.noanim
+
 	rts
 .endp
 
@@ -1097,6 +1113,7 @@ stage	equ vram+32*17+26 ;last char
 .proc	reset_stage
 	lda #"1"* 
 	sta stage
+	mva #1 stageno
 	rts
 .endp
 
@@ -1107,7 +1124,8 @@ stage	equ vram+32*17+26 ;last char
 .endp
 
 .proc	inc_stage
-	inc stage
+	inc stageno	;number form
+	inc stage		;char form
 	lda stage
 	a_ge #"9"*+1 x1
 	rts
@@ -1132,6 +1150,7 @@ x1	dex
 	beq gameover
 	mva #"9"* score+1,x
 	dec gravtick ;speed up gravity
+	dec gravtick
 	dec gravtick
 	jmp x2
 	
@@ -1415,10 +1434,50 @@ x1	sta (w1),y
 	inc_stage
 	add_gscore
 	reset_score
-	mva #C_EMPTY fill_playfield.character
-	fill_playfield
+	;mva #C_EMPTY fill_playfield.character
+	;fill_playfield
+	load_stage
 	rts
 .endp	
+
+;load stage based on stageno
+;TODO:more stages
+.proc	load_stage
+	lda stageno
+	asl @
+	tax
+	mwa #vram+2*32+5 w1
+	mwa stages,x w2
+	
+	ldx #22
+x2	ldy #9
+	
+x1	lda (w2),y
+	beq x4	;mask #0 as #C_EMPTY
+x5	sta (w1),y
+	dey
+	bpl x1
+	
+	add16 #32 w1
+	add16 #10 w2
+	
+	lda noanim	;do not animate if noanim set
+	bne x3
+	
+	pause 2
+	
+x3	dex
+	bne x2
+	rts
+	
+x4	lda #C_EMPTY
+	jmp x5
+	
+noanim	dta 0
+stages	
+:2	dta a(data),a(data)
+data	ins 'dtnx.atrmap01.dat'
+.endp
 	
 .proc	game_over
 	mva #C_BRICK fill_playfield.character
@@ -1448,6 +1507,18 @@ text	dta d"      "
 	dta d"      "
 .endp
 
+;sets leveldone=0 if level is done
+.proc	check_level_done
+	ldx #9
+x1	lda vram+(2+21)*32+5,x
+	cmp #C_EMPTY
+	bne x0
+	dex
+	bpl x1
+	lda #0
+x0	sta leveldone
+	rts
+.endp
 
 	org msx
 	opt h-
