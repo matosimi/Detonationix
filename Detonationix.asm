@@ -1,7 +1,6 @@
 ;DETONATIONIX 25-26.8.2020 - Abbuc 2020
 
 ;TODOs:
-; fix controls
 ; add stages
 hposp0	equ $d000
 hposm0	equ $d004
@@ -66,7 +65,8 @@ tagcount	equ $b7 ;number of tagged
 tagcount2	equ $b8 ;number of tagged in single direction
 fftmp	equ $b9 ;floodfill temp
 gover	equ $ba ;1=game is over
-
+gcounter	equ $bb ;gravity counter (vbi)
+ccounter	equ $bc ;controls counter (vbi)
 
 C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
@@ -168,13 +168,13 @@ title	info
 	next_tile
 	
 	reset_score
-	mva #0 gover
 	
-	;game loop
+	mva #0 gover
+	sta gcounter
+	sta ccounter
 
-	mva #10 speed
-	mva 20 gravity.grav_anc	;starting counter for gravity
-	mva #40 gravtick
+	mva #5 speed	;controls responsiveness
+	mva #40 gravtick	;gravity speed
 	;init new tile
 	
 	mva #4+4 xpos
@@ -192,20 +192,14 @@ loop	lda gover
 	jmp title
 	
 	
-x1	lda 20
-	add speed
-	sta speed_anc
-	mva #1 controls.handled
+x1	mva #1 controls.handled
 cloop	controls
 	gravity
 	
-	lda speed_anc
-	cmp 20
-	beq loop
-	add #10
-	cmp 20
-	bne cloop
+	lda ccounter
+	a_lt speed cloop
 	
+	mva #0 ccounter
 	jmp loop
 .endl
 
@@ -230,6 +224,7 @@ x1	next_tile
 	mva crotation draw_tile.rotation
 	mva cbomb draw_tile.bomb
 	mva #0 controls.handled
+	mva #100 gcounter	;instant gravity (draw)
 	validate_tile
 	jeq ok
 	mva #1 gover ;game over
@@ -369,26 +364,17 @@ x4	dey
 .endp
 	
 .proc	gravity
-	lda 20
-	cmp grav_anc
-	bne x0
-	
-	add gravtick
-	sta grav_anc	;set next gravity occurence
+	lda gcounter
+	a_lt gravtick x0
 	
 	pause 0	;removes flicker
 	delete_tile
+	mva #0 gcounter	;reset gravity counter
 	inc ypos
 	validate_tile
 	jeq ok
 	dec ypos
 	place_tile
-	
-	;todo: tune this part - not working well..
-	lda 20
-	adc #50
-	sta speed_anc ;fixes delay after placement
-	sta grav_anc  ;fixes delay on next_tile
 	
 	rts
 ok	draw_tile
@@ -399,6 +385,9 @@ grav_anc	dta 0
 .proc	controls
 	lda handled
 	beq x0
+	
+	lda trig0
+	beq rotate_back
 	
 	lda porta
 	and #$0f
@@ -413,15 +402,36 @@ grav_anc	dta 0
 	jcc left
 	lsr @
 	jcc right
-x0	rts
 	
-up	delete_tile
-	inc crotation
+x0	rts
+
+rotate_back
+	delete_tile
+	dec crotation
+	lda crotation
+	and #$03
+	sta crotation
 	mva crotation draw_tile.rotation
 	validate_tile
 	jeq ok
+	inc crotation
 	lda crotation
-	add #3
+	and #$03
+	sta crotation
+	sta draw_tile.rotation
+	jmp err
+	
+up	delete_tile
+	inc crotation
+	lda crotation
+	and #$03
+	sta crotation
+	
+	mva crotation draw_tile.rotation
+	validate_tile
+	jeq ok
+	dec crotation
+	lda crotation
 	and #$03
 	sta crotation
 	sta draw_tile.rotation
@@ -430,9 +440,11 @@ up	delete_tile
 down	delete_tile
 	inc ypos
 	validate_tile
-	jeq ok
+	jeq dgrav
 	dec ypos	;revert
 	jmp err
+dgrav	mva #0 gcounter	;reset gravity when forced move down
+	jmp ok
 	
 left	delete_tile
 	dec xpos
@@ -450,6 +462,7 @@ right	delete_tile
 
 ok	draw_tile
 	mva #0 handled
+	sta ccounter
 	rts
 
 err	draw_tile
@@ -905,6 +918,8 @@ gamevbi	phr
 	rmt.play
 	els
 	inc 20
+	inc gcounter
+	inc ccounter
 	eif
 	
 	
