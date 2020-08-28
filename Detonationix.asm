@@ -170,18 +170,6 @@ title	info
 	reset_score
 	mva #0 gover
 	
-	;game_over
-	;next_stage
-	
-	
-
-	/*mva #4 draw_tile.type
-	mva #2 draw_tile.rotation
-	mva #10 xpos
-	sta ypos
-	draw_tile
-	jmp **/
-	
 	;game loop
 
 	mva #10 speed
@@ -190,7 +178,11 @@ title	info
 	;init new tile
 	
 	mva #4+4 xpos
-	mva #2 ypos
+	mva #2 ypos 
+	mva ctype draw_tile.type
+	mva crotation draw_tile.rotation
+	mva cbomb draw_tile.bomb
+	
 	;mva ctype draw_tile.type
 loop	lda gover
 	beq x1
@@ -394,7 +386,7 @@ x4	dey
 	
 	;todo: tune this part - not working well..
 	lda 20
-	adc #5
+	adc #50
 	sta speed_anc ;fixes delay after placement
 	sta grav_anc  ;fixes delay on next_tile
 	
