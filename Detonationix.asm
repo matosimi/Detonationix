@@ -210,8 +210,9 @@ cloop	controls
 
 .proc	place_tile
 	draw_tile
+linesloop
 	check_lines
-	lda check_lines.count
+	lda bomb_buffer_index
 	beq x1
 	detonate_bombs
 gravloop
@@ -220,8 +221,10 @@ gravloop
 	sticky_gravity
 	cmp #0 ;nothing felt
 	bne gravloop
-
 	check_level_done
+	jmp linesloop
+	
+
 	
 x1	next_tile
 	mva #4+4 xpos
@@ -257,7 +260,7 @@ nextline	dex
 	cpx #4
 	bne x2
 	rts
-count	dta 0	
+count	dta 0
 .endp	
 
 .proc	addbombs
@@ -297,6 +300,7 @@ bomb_buffer_index
 	dta 0
 	
 .proc	detonate_bombs
+Todo: bomb explosion propagation
 	ldy bomb_buffer_index
 	jeq x0	;nothing to detonate
 	
