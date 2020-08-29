@@ -1157,7 +1157,7 @@ stage	equ vram+32*17+26 ;last char
 .proc	reset_stage
 	lda #"1"* 
 	sta stage
-	mva #14 stageno ;zero based stage number
+	mva #0 stageno ;zero based stage number
 	rts
 .endp
 
