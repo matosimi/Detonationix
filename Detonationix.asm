@@ -199,15 +199,18 @@ loop	lda gover
 x1	lda leveldone
 	bne x2
 	;next stage sequence
-	next_stage
+XXXX	next_stage
 	inc leveldone
 	lda gwin ;win
-	beq title
+	bne title
 	
 x2	mva #1 controls.handled
 cloop	controls
 	gravity
-	
+	;debug:
+	;lda consol
+	;cmp #6
+	;beq XXXX
 	lda ccounter
 	a_lt speed cloop
 	
@@ -976,6 +979,9 @@ gamevbi	phr
 
 	ift debug_no_music == 0
 	rmt.play
+	inc 20
+	inc gcounter
+	inc ccounter
 	els
 	inc 20
 	inc gcounter
@@ -1510,7 +1516,7 @@ x3	mva text,x (w1),y
 	dec lines
 	bne x4
 	
-	mva #0 gwin
+	mva #1 gwin
 	trigger_push_release	
 	rts
 lines	dta 3	
@@ -1625,8 +1631,7 @@ stagedata
 	mva #255 ntsctimer
 	jmp vbntsc
 	
-vbpal	inc 20
-	jsr rmt.rmt_play 
+vbpal	jsr rmt.rmt_play 
 vbntsc	rts
 .endp
 
