@@ -1,7 +1,6 @@
 ;DETONATIONIX 25-26.8.2020 - Abbuc 2020
+;additional fixes to 29.8.2020
 
-;TODOs:
-; add stages
 hposp0	equ $d000
 hposm0	equ $d004
 sizep0	equ $d008
@@ -32,6 +31,7 @@ mypmbase	equ $7c00
 vram	equ $1000
 vram2	equ $1400
 
+;flood fill buffers
 w1lbuf	equ $1800
 w1hbuf	equ $1900
 xbuf	equ $1a00
@@ -68,6 +68,7 @@ gover	equ $ba ;1=game is over
 gcounter	equ $bb ;gravity counter (vbi)
 ccounter	equ $bc ;controls counter (vbi)
 leveldone	equ $bd ;0 if level is done
+gwin	equ $be ;1=player is the winner
 
 C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
@@ -76,8 +77,8 @@ C_EMPTY		equ ' '*
 C_BOMB		equ 'u'
 C_DETONATION	equ 'v'
 
-debug_no_music	equ 1
-debug_skip_title	equ 1
+debug_no_music	equ 0
+debug_skip_title	equ 0
 debug_vram_flicker	equ 0
 
 	org code
@@ -158,12 +159,14 @@ title	info
 	game_init
 	rmt.init
 	draw_background
+	mva #0 stageno
+	
 	draw_playfield
 	draw_stats
 	
+	reset_stage
 	reset_score
 	reset_gscore
-	reset_stage
 	
 	next_tile
 	next_tile
@@ -171,6 +174,7 @@ title	info
 	reset_score
 	
 	mva #0 gover
+	sta gwin
 	sta gcounter
 	sta ccounter
 
@@ -196,6 +200,9 @@ x1	lda leveldone
 	bne x2
 	;next stage sequence
 	next_stage
+	inc leveldone
+	lda gwin ;win
+	beq title
 	
 x2	mva #1 controls.handled
 cloop	controls
@@ -300,7 +307,7 @@ bomb_buffer_index
 	dta 0
 	
 .proc	detonate_bombs
-Todo: bomb explosion propagation
+;Todo: bomb explosion propagation
 	ldy bomb_buffer_index
 	jeq x0	;nothing to detonate
 	
@@ -322,6 +329,10 @@ x1	ldy bomb_buffer_index
 	dey
 	sty bomb_buffer_index
 	mwa bomb_buffer,y w1
+	
+	ldy #0
+	mva #C_EMPTY (w1),y ;unmark detonating bomb (to not add it again during blast propagation)
+	;trigger_push_release ;debug
 	sub16 xblast w1	;left edge
 	sub16 ylinesup w1	;top-left edge
 	
@@ -330,12 +341,28 @@ x1	ldy bomb_buffer_index
 	jmp x1
 x0	rts
 x00	pause 25
-	ldy bstor
+	/*ldy bstor	;bomb_buffer_top_index
 	beq x0
 	mva #0 bstor
 	sty bomb_buffer_index
 	mva #C_EMPTY draw_detonation.ptr1
-	jmp x1
+	jmp x1 */
+	
+	;clean up detonations
+	mwa #vram+2*32+5 w1
+	ldx #22
+x22	ldy #9
+x12	lda (w1),y
+	cmp #C_DETONATION
+	bne x32
+	mva #C_EMPTY (w1),y
+x32	dey
+	bpl x12
+	
+	add16 #32 w1
+	dex
+	bne x22
+	rts
 
 ybt	dta 0,1,2,3
 xbt	dta 3,4,5,6
@@ -358,7 +385,7 @@ x1	lda (w1),y
 	cmp #C_BRICK
 	beq x3
 	cmp #C_BOMB
-	beq x3
+	beq x5 ;propagate blast
 	cmp #C_DETONATION
 	beq x3
 	jmp x4 ;do not draw blast outside playfield
@@ -371,6 +398,19 @@ x4	dey
 	dex
 	bne x2
 	rts
+	
+x5	;add to bomb buffer
+	mwa w1 w2
+	stx xstor
+	sty ystor
+	add_bomb_to_buffer
+	;trigger_push_release ;debug
+	mwa w2 w1
+	ldx xstor
+	ldy ystor
+	jmp x3
+xstor	dta 0
+ystor	dta 0
 .endp
 	
 .proc	gravity
@@ -1117,7 +1157,7 @@ stage	equ vram+32*17+26 ;last char
 .proc	reset_stage
 	lda #"1"* 
 	sta stage
-	mva #1 stageno
+	mva #14 stageno ;zero based stage number
 	rts
 .endp
 
@@ -1433,6 +1473,9 @@ x1	sta (w1),y
 .endp	
 
 .proc	next_stage
+	lda stageno
+	cmp #14
+	beq winner
 	mva #":" fill_playfield.character
 	fill_playfield
 	inc_stage
@@ -1441,11 +1484,42 @@ x1	sta (w1),y
 	;mva #C_EMPTY fill_playfield.character
 	;fill_playfield
 	load_stage
+	lda #40		;lowest game speed
+	sub stageno	;sub stage number
+	sta gravtick 	;speed up game every stage
 	rts
+winner
+	mva #C_DETONATION fill_playfield.character
+	fill_playfield
+	add_gscore
+	reset_score
+	
+	mva #3 lines
+	
+	mwa #vram+11*32+6 w1
+	ldx #7
+x4	ldy #7
+x3	mva text,x (w1),y
+	dex
+	dey
+	bpl x3
+	add16 #32 w1
+	txa
+	add #8+8
+	tax
+	dec lines
+	bne x4
+	
+	mva #0 gwin
+	trigger_push_release	
+	rts
+lines	dta 3	
+text	dta d"        "
+	dta d" WINNER "
+	dta d"        "
 .endp	
 
 ;load stage based on stageno
-;TODO:more stages
 .proc	load_stage
 	lda stageno
 	asl @
@@ -1479,8 +1553,7 @@ x4	lda #C_EMPTY
 	
 noanim	dta 0
 stages	
-:2	dta a(data),a(data)
-data	ins 'dtnx.atrmap01.dat'
+:15	dta a(stagedata+:1*220)
 .endp
 	
 .proc	game_over
@@ -1523,6 +1596,14 @@ x1	lda vram+(2+21)*32+5,x
 x0	sta leveldone
 	rts
 .endp
+
+stagedata
+.rept 9,#+1
+	ins 'stages\stage0:1.dat'
+.endr
+:6	ins 'stages\stage1:1.dat'
+
+	guard $9000
 
 	org msx
 	opt h-
