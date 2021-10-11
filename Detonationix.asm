@@ -1,5 +1,6 @@
 ;DETONATIONIX 25-26.8.2020 - Abbuc 2020
 ;additional fixes to 29.8.2020
+;bomb buffer fix (128->256 size) 31.8.2020
 
 hposp0	equ $d000
 hposm0	equ $d004
@@ -69,17 +70,20 @@ gcounter	equ $bb ;gravity counter (vbi)
 ccounter	equ $bc ;controls counter (vbi)
 leveldone	equ $bd ;0 if level is done
 gwin	equ $be ;1=player is the winner
+fftmp_seg	equ $ef ;floodfill temp for segments
 
 C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
-C_BRICK		equ 't'*
-C_EMPTY		equ ' '*
-C_BOMB		equ 'u'
-C_DETONATION	equ 'v'
 
-debug_no_music	equ 0
-debug_skip_title	equ 0
-debug_vram_flicker	equ 0
+C_CHARBRICK	equ 't'*
+C_CHAREMPTY	equ ' '*
+C_CHARBOMB	equ 'u'
+C_CHARDETONATION	equ 'v'
+C_CHARGROUNDED	equ $ff
+
+debug_no_music	equ 1
+debug_skip_title	equ 1
+debug_vram_flicker	equ 1
 
 	org code
 .local	init
@@ -225,8 +229,9 @@ linesloop
 	lda bomb_buffer_index
 	beq x1
 	detonate_bombs
-gravloop
 	segmentation
+gravloop
+	wait_for_start
 	pause 3
 	sticky_gravity
 	cmp #0 ;nothing felt
@@ -258,7 +263,7 @@ ok	rts
 x2	mwa lines,x w1
 	ldy #5
 x1	lda (w1),y
-	cmp #C_EMPTY
+	cmp #C_CHAREMPTY
 	beq nextline
 x3	iny
 	cpy #16
@@ -277,7 +282,7 @@ count	dta 0
 	stx ztmp
 	
 x2	lda (w1),y
-	cmp #C_BOMB
+	cmp #C_CHARBOMB
 	beq x1
 x3	dey
 	cpy #4
@@ -305,7 +310,7 @@ x1	add_bomb_to_buffer
 .endp
 
 bomb_buffer
-:128	dta 0
+:256	dta 0
 bomb_buffer_index
 	dta 0
 	
@@ -324,7 +329,7 @@ bomb_buffer_index
 	mva ylines,x ylinesup
 	mva hbt,x hblast
 	
-	mva #C_DETONATION draw_detonation.ptr1
+	mva #C_CHARDETONATION draw_detonation.ptr1
 	
 x1	ldy bomb_buffer_index
 	jeq x00
@@ -334,7 +339,7 @@ x1	ldy bomb_buffer_index
 	mwa bomb_buffer,y w1
 	
 	ldy #0
-	mva #C_EMPTY (w1),y ;unmark detonating bomb (to not add it again during blast propagation)
+	mva #C_CHAREMPTY (w1),y ;unmark detonating bomb (to not add it again during blast propagation)
 	;trigger_push_release ;debug
 	sub16 xblast w1	;left edge
 	sub16 ylinesup w1	;top-left edge
@@ -348,7 +353,7 @@ x00	pause 25
 	beq x0
 	mva #0 bstor
 	sty bomb_buffer_index
-	mva #C_EMPTY draw_detonation.ptr1
+	mva #C_CHAREMPTY draw_detonation.ptr1
 	jmp x1 */
 	
 	;clean up detonations
@@ -356,9 +361,9 @@ x00	pause 25
 	ldx #22
 x22	ldy #9
 x12	lda (w1),y
-	cmp #C_DETONATION
+	cmp #C_CHARDETONATION
 	bne x32
-	mva #C_EMPTY (w1),y
+	mva #C_CHAREMPTY (w1),y
 x32	dey
 	bpl x12
 	
@@ -383,16 +388,16 @@ ylinesup	dta 0
 	ldx detonate_bombs.hblast
 x2	ldy detonate_bombs.wblast
 x1	lda (w1),y
-	cmp #C_EMPTY
+	cmp #C_CHAREMPTY
 	beq x3
-	cmp #C_BRICK
+	cmp #C_CHARBRICK
 	beq x3
-	cmp #C_BOMB
+	cmp #C_CHARBOMB
 	beq x5 ;propagate blast
-	cmp #C_DETONATION
+	cmp #C_CHARDETONATION
 	beq x3
 	jmp x4 ;do not draw blast outside playfield
-x3	lda #C_DETONATION
+x3	lda #C_CHARDETONATION
 ptr1	equ *-1
 	sta (w1),y
 x4	dey
@@ -406,9 +411,11 @@ x5	;add to bomb buffer
 	mwa w1 w2
 	stx xstor
 	sty ystor
+	;check_if_bomb_in_buffer_already
+	;jne x6
 	add_bomb_to_buffer
 	;trigger_push_release ;debug
-	mwa w2 w1
+x6	mwa w2 w1
 	ldx xstor
 	ldy ystor
 	jmp x3
@@ -578,7 +585,7 @@ x1	lda random
 	a_ge size x1
 	tay
 	lda (w1),y
-	cmp #C_BRICK
+	cmp #C_CHARBRICK
 	bne x1	;if empty find another brick	
 	sty next_tile.bomb
 	sty draw_tile.bomb
@@ -602,12 +609,13 @@ x1
 	inx
 	bne x1
 	rts
+;playfield background - vanishing tetris pieces
 data	ins 'bg2_narr/bg2_narrow.scr'
 .endp
 
 .proc	clear_next_window
 	ldx #3
-	lda #C_EMPTY
+	lda #C_CHAREMPTY
 x1
 :4	sta vram+32*(6+:1)+22,x
 	dex
@@ -713,17 +721,17 @@ x1	mva (w1),y current,y
 	beq x3
 	;single bomb
 	tay
-	mva #C_BOMB current,y
+	mva #C_CHARBOMB current,y
 	jmp x2
 x3	;full bomb
 	ldy size
 x31	lda current,y
-	cmp #C_BRICK
+	cmp #C_CHARBRICK
 	beq x4
 	dey
 	bpl x31
 	jmp x2	
-x4	mva #C_BOMB current,y
+x4	mva #C_CHARBOMB current,y
 	dey
 	bpl x31
 	
@@ -996,7 +1004,7 @@ gamevbi	phr
 	ldx #7
 x1	lda random
 	ora #%01010101
-	sta gamefont+C_DETONATION*8,x
+	sta gamefont+C_CHARDETONATION*8,x
 	dex
 	bpl x1
 	
@@ -1272,8 +1280,8 @@ x20
 	;search for first filled byte
 x2	ldy #9
 x1	lda (w1),y
-	a_ge #C_BRICK found
-	;cmp #C_EMPTY
+	a_ge #C_CHARBRICK found
+	;cmp #C_CHAREMPTY
 	;bne found
 	dey
 	bpl x1
@@ -1282,6 +1290,8 @@ x1	lda (w1),y
 	cpx #22
 	bne x2
 	
+	;wait for start
+	wait_for_start ;debug
 	;done
 	rts
 	
@@ -1371,7 +1381,7 @@ nextsegment
 ;returns A=tag if tagged
 .proc	tag_it
 	lda (w1),y
-	cmp #C_EMPTY
+	cmp #C_CHAREMPTY
 	bne x1
 	rts
 	
@@ -1401,37 +1411,54 @@ ybuf
 ffindex	dta 0
 .endp
 
+.proc	wait_for_start
+	lda #6
+@	cmp consol
+	bne @-
+@	cmp consol
+	beq @-
+	rts
+.endp
+
 ;moves down each segment that does not touch bottom line
-;returns number of bricks that felt in A
+;returns number of bricks that fell in A
 .proc	sticky_gravity
-	mwa #vram2+(2+21)*32+5 w2	;bottom line
 	mva #0 ztmp ;counter of falling bricks
+	/*
+	mwa #vram2+(2+21)*32+5 w2	;bottom line
 	ldy #9
 x2	lda (w2),y
-	cmp #C_EMPTY
+	cmp #C_CHAREMPTY
 	beq x1
 	delete_current_segment
 x1	dey
-	bpl x2
+	bpl x2*/
+	ground_bottom_line
+	todo: look for anything that touches grounded blocks and ground it
+	
+	
+	
+	;all segments touching bottom line are grounded = $ff
 	;only falling segments remained, so move them down	
 	mwa #vram2+(2+20)*32+5 w2	;bottom line-1
 	mwa #vram+(2+20)*32+5 w1
-	ldx #20
+	ldx #20	;lines
 x5	ldy #9
 x4	lda (w2),y
-	cmp #C_EMPTY
+	cmp #C_CHAREMPTY
 	beq x3
-	lda (w1),y
-	sta fftmp
+	mva (w1),y fftmp
+	mva (w2),y fftmp_seg
 	tya
 	ora #32
 	tay
-	lda fftmp
-	sta (w1),y
+	mva fftmp (w1),y
+	mva fftmp_seg (w2),y
 	tya
 	and #$0f
 	tay
-	mva #C_EMPTY (w1),y
+	mva #C_CHAREMPTY (w1),y
+	sta (w2),y
 	inc ztmp
 	
 x3	dey
@@ -1451,12 +1478,47 @@ x2
 	lda vram2+:1*$100,x
 	cmp tag
 	bne x1:1
-	mva #C_EMPTY vram2+:1*$100,x	
+	mva #C_CHAREMPTY vram2+:1*$100,x	
 x1:1	
 .endr
 	dex
 	bne x2
 	rts
+.endp
+
+.proc	ground_bottom_line
+	ldy #9
+x1	lda vram2+(2+21)*32+5,y
+	cmp #C_CHAREMPTY
+	beq @+
+	cmp #C_CHARGROUNDED
+	beq @+
+	ground_current_segment
+@	dey
+	bpl x1
+	rts
+.endp
+
+.proc	ground_current_segment
+	sta tag
+	mva #20 lines
+	mwa #vram2+(2+21)*32+5 ptr1
+x2	ldx #9
+x1	lda vram2+(2+21)*32+5,x
+ptr1	equ *-2
+	cmp tag
+	bne @+
+	mwa #ptr1 ptr2
+	lda #C_CHARGROUNDED
+	sta vram2+(2+21)*32+5,x
+ptr2	equ *-2
+@	dex
+	bpl x1
+	sub16 #32 ptr1
+	dec lines
+	bpl x2
+	rts
+lines	dta 0
 .endp
 .endp
 
@@ -1464,7 +1526,7 @@ x1:1
 	mwa #vram+2*32+5 w1
 	ldx #22
 x2	ldy #9
-	lda #C_BRICK
+	lda #C_CHARBRICK
 character	equ *-1	
 x1	sta (w1),y
 	dey
@@ -1487,7 +1549,7 @@ x1	sta (w1),y
 	inc_stage
 	add_gscore
 	reset_score
-	;mva #C_EMPTY fill_playfield.character
+	;mva #C_CHAREMPTY fill_playfield.character
 	;fill_playfield
 	load_stage
 	lda #40		;lowest game speed
@@ -1495,7 +1557,7 @@ x1	sta (w1),y
 	sta gravtick 	;speed up game every stage
 	rts
 winner
-	mva #C_DETONATION fill_playfield.character
+	mva #C_CHARDETONATION fill_playfield.character
 	fill_playfield
 	add_gscore
 	reset_score
@@ -1537,7 +1599,7 @@ text	dta d"        "
 x2	ldy #9
 	
 x1	lda (w2),y
-	beq x4	;mask #0 as #C_EMPTY
+	beq x4	;mask #0 as #C_CHAREMPTY
 x5	sta (w1),y
 	dey
 	bpl x1
@@ -1554,7 +1616,7 @@ x3	dex
 	bne x2
 	rts
 	
-x4	lda #C_EMPTY
+x4	lda #C_CHAREMPTY
 	jmp x5
 	
 noanim	dta 0
@@ -1563,7 +1625,7 @@ stages
 .endp
 	
 .proc	game_over
-	mva #C_BRICK fill_playfield.character
+	mva #C_CHARBRICK fill_playfield.character
 	fill_playfield
 	
 	mva #4 lines
@@ -1594,7 +1656,7 @@ text	dta d"      "
 .proc	check_level_done
 	ldx #9
 x1	lda vram+(2+21)*32+5,x
-	cmp #C_EMPTY
+	cmp #C_CHAREMPTY
 	bne x0
 	dex
 	bpl x1
@@ -1604,6 +1666,7 @@ x0	sta leveldone
 .endp
 
 stagedata
+	ins 'stages\stagex.dat'
 .rept 9,#+1
 	ins 'stages\stage0:1.dat'
 .endr
