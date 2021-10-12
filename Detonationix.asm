@@ -76,7 +76,7 @@ C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
 
 C_CHARBRICK	equ 't'*
-C_CHAREMPTY	equ ' '*
+C_CHAREMPTY	equ " " ;' '*
 C_CHARBOMB	equ 'u'
 C_CHARDETONATION	equ 'v'
 C_CHARGROUNDED	equ $ff
@@ -84,6 +84,7 @@ C_CHARGROUNDED	equ $ff
 debug_no_music	equ 1
 debug_skip_title	equ 1
 debug_vram_flicker	equ 0
+debug_gravity	equ 0
 
 	org code
 .local	init
@@ -231,7 +232,9 @@ linesloop
 	detonate_bombs
 	segmentation
 gravloop
-	;wait_for_start
+	ift debug_gravity == 1
+	wait_for_start
+	eif
 	pause 3
 	sticky_gravity
 	cmp #0 ;nothing felt
@@ -845,13 +848,13 @@ x0	rts
 .endp
 	
 .proc	save
-	cmp #' '*
+	cmp #C_CHAREMPTY
 	beq x0	;draw only those that are not empty
 	sta ztmp
 	lda delete
 	beq x1
 	;delete branch
-	lda #' '*
+	lda #C_CHAREMPTY
 	jmp x2
 x1	lda validate
 	beq x3
@@ -859,7 +862,7 @@ x1	lda validate
 	mwa ptr1 ptr2
 	lda $ffff,x
 ptr2	equ *-2
-	cmp #' '*
+	cmp #C_CHAREMPTY
 	bne x4 ;invalid
 	rts
 	
@@ -1030,35 +1033,52 @@ playfield
 */
 
 ;3x3
-tile0	dta '   '*
-	dta ' tt'*
-	dta 'tt '*
+tile0	dta "   "
+	dta " ##"
+	dta "## "
 	
-tile1	dta '   '*
-	dta 'tt '*
-	dta ' tt'*
+tile1	dta "   "
+	dta "## "
+	dta " ##"
 	
-tile2	dta '   '*
-	dta 'ttt'*
-	dta ' t '*
+tile2	dta "   "
+	dta "###"
+	dta " # "
 	
-tile3	dta ' t '*
-	dta ' t '*
-	dta ' tt'*
+tile3	dta " # "
+	dta " # "
+	dta " ##"
 
-tile4	dta ' t '*
-	dta ' t '*
-	dta 'tt '*
+tile4	dta " # "
+	dta " # "
+	dta "## "
 	
 ;2x2	
-tile5	dta 'tt'*
-	dta 'tt'*
+tile5	dta "##"
+	dta "##"
 
 ;4x4	
-tile6	dta '  t '*
-	dta '  t '*
-	dta '  t '*
-	dta '  t '*
+tile6	dta "  # "
+	dta "  # "
+	dta "  # "
+	dta "  # "
+	
+	dta $ff
+	
+;switches # -> charbrick
+.proc	convert_tiles
+	ldx #0
+x1	lda tile0,x
+	cmp #$ff
+	beq x0
+	cmp #"#"
+	bne @+
+	lda #C_CHARBRICK
+@	sta tile0,x
+	inx
+	bne x1
+x0	rts
+.endp
 	
 .proc 	game_init
 	mva #0 nmien		
@@ -1075,6 +1095,7 @@ tile6	dta '  t '*
 :4	mva #64+32*:1 hposp0+:1
 :4	mva #$18 colpm0+:1
 :4	mva #3 sizep0+:1
+	convert_tiles
 	rts
 .endp
 	
@@ -1280,9 +1301,11 @@ x20
 	;search for first filled byte
 x2	ldy #9
 x1	lda (w1),y
-	a_ge #C_CHARBRICK found
-	;cmp #C_CHAREMPTY
-	;bne found
+	;a_ge #C_CHARBRICK found
+	cmp #C_CHARBRICK
+	beq found
+	cmp #C_CHARBOMB
+	beq found
 	dey
 	bpl x1
 	add16 #32 w1
@@ -1290,8 +1313,7 @@ x1	lda (w1),y
 	cpx #22
 	bne x2
 	
-	;wait for start
-	wait_for_start ;debug
+	;wait_for_start ;debug
 	;done
 	rts
 	
@@ -1470,7 +1492,7 @@ x3	dey
 	lda ztmp	
 	rts
 
-.proc	delete_current_segment
+/*.proc	delete_current_segment
 	sta tag
 	ldx #0
 x2	
@@ -1484,7 +1506,7 @@ x1:1
 	dex
 	bne x2
 	rts
-.endp
+.endp */
 
 ;uses A,Y
 .proc	ground_touching_ground
@@ -1642,7 +1664,7 @@ text	dta d"        "
 x2	ldy #9
 	
 x1	lda (w2),y
-	beq x4	;mask #0 as #C_CHAREMPTY
+	;beq x4	;mask #0 as #C_CHAREMPTY
 x5	sta (w1),y
 	dey
 	bpl x1
@@ -1659,8 +1681,8 @@ x3	dex
 	bne x2
 	rts
 	
-x4	lda #C_CHAREMPTY
-	jmp x5
+;x4	lda #C_CHAREMPTY
+;	jmp x5
 	
 noanim	dta 0
 stages	
