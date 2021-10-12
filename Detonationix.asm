@@ -83,7 +83,7 @@ C_CHARGROUNDED	equ $ff
 
 debug_no_music	equ 1
 debug_skip_title	equ 1
-debug_vram_flicker	equ 1
+debug_vram_flicker	equ 0
 
 	org code
 .local	init
@@ -231,7 +231,7 @@ linesloop
 	detonate_bombs
 	segmentation
 gravloop
-	wait_for_start
+	;wait_for_start
 	pause 3
 	sticky_gravity
 	cmp #0 ;nothing felt
@@ -1434,9 +1434,7 @@ x2	lda (w2),y
 x1	dey
 	bpl x2*/
 	ground_bottom_line
-	todo: look for anything that touches grounded blocks and ground it
-	
-	
+	ground_touching_ground	
 	
 	;all segments touching bottom line are grounded = $ff
 	;only falling segments remained, so move them down	
@@ -1446,6 +1444,8 @@ x1	dey
 x5	ldy #9
 x4	lda (w2),y
 	cmp #C_CHAREMPTY
+	beq x3
+	cmp #C_CHARGROUNDED
 	beq x3
 	mva (w1),y fftmp
 	mva (w2),y fftmp_seg
@@ -1486,6 +1486,48 @@ x1:1
 	rts
 .endp
 
+;uses A,Y
+.proc	ground_touching_ground
+	mwa #vram2+(1+21)*32+5 ptr1 ;1 above bottom line
+	mva #20 lines
+x2	ldy #9
+x1	jsr load_vram2_y
+	cmp #C_CHAREMPTY
+	beq @+
+	cmp #C_CHARGROUNDED
+	beq @+
+	sta current_segment
+	sty ystore
+	tya
+	ora #32
+	tay
+	jsr load_vram2_y
+	ldy ystore
+	cmp #C_CHARGROUNDED
+	bne @+
+	
+	lda current_segment	;ground current segment if it touches ground
+	ground_current_segment
+	;ldy ystore ;previous routine does not change Y
+	
+@	dey
+	bpl x1
+	sub16 #32 ptr1
+	dec lines
+	bpl x2
+	rts
+
+load_vram2_y
+	lda vram2+(1+21)*32+5,y
+ptr1	equ *-2
+	rts
+
+lines	dta 0
+ystore	dta 0
+current_segment	dta 0
+.endp
+
+;uses A,Y
 .proc	ground_bottom_line
 	ldy #9
 x1	lda vram2+(2+21)*32+5,y
@@ -1499,6 +1541,7 @@ x1	lda vram2+(2+21)*32+5,y
 	rts
 .endp
 
+;uses A,X
 .proc	ground_current_segment
 	sta tag
 	mva #20 lines
@@ -1508,7 +1551,7 @@ x1	lda vram2+(2+21)*32+5,x
 ptr1	equ *-2
 	cmp tag
 	bne @+
-	mwa #ptr1 ptr2
+	mwa ptr1 ptr2
 	lda #C_CHARGROUNDED
 	sta vram2+(2+21)*32+5,x
 ptr2	equ *-2
@@ -1666,7 +1709,7 @@ x0	sta leveldone
 .endp
 
 stagedata
-	ins 'stages\stagex.dat'
+	;ins 'stages\stagex.dat' ;debug
 .rept 9,#+1
 	ins 'stages\stage0:1.dat'
 .endr
