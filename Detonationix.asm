@@ -60,7 +60,7 @@ speed	equ $b1 ;controls speed
 speed_anc	equ $b2 ;speed anchor
 gravtick	equ $b3 ;gravity speed (level)
 cbomb	equ $b4 ;current bomb
-bstor	equ $b5 ;bomb index storage
+;bstor	equ $b5 ;bomb index storage
 tag	equ $b6 ;used for floodfill
 tagcount	equ $b7 ;number of tagged
 tagcount2	equ $b8 ;number of tagged in single direction
@@ -76,9 +76,9 @@ C_FULLBOMB	equ $ff
 C_NOBOMB		equ $f0
 
 C_CHARBRICK	equ 't'*
-C_CHAREMPTY	equ " " ;' '*
+C_CHAREMPTY	equ " "
 C_CHARBOMB	equ 'u'
-C_CHARDETONATION	equ 'v'
+C_CHARDETONATION	equ $4b
 C_CHARGROUNDED	equ $ff
 
 debug_no_music	equ 1
@@ -281,7 +281,8 @@ nextline	dex
 count	dta 0
 .endp	
 
-.proc	addbombs
+;adds bombs in the current line to bomb buffer
+.proc	addbombs	
 	stx ztmp
 	
 x2	lda (w1),y
@@ -294,7 +295,8 @@ x3	dey
 	ldx ztmp
 	rts
 
-x1	add_bomb_to_buffer
+x1	mva #C_CHARDETONATION (w1),y	;mark bomb that is detonating
+	add_bomb_to_buffer
 	jmp x3	
 	
 .endp
@@ -304,15 +306,19 @@ x1	add_bomb_to_buffer
 	tya
 	add w1
 	sta bomb_buffer,x
-	lda #0
+	lda #0	;TODO: use $80 for mega bomb
 	adc w1+1
 	sta bomb_buffer+1,x
+	mva #1 blast_size_buffer,x	;set initial blast width to 1
+	sta blast_size_buffer+1,x	;set initial blast height to 1
 	inc bomb_buffer_index
 	inc bomb_buffer_index
 	rts
 .endp
 
 bomb_buffer
+:256	dta 0
+blast_size_buffer
 :256	dta 0
 bomb_buffer_index
 	dta 0
@@ -321,11 +327,12 @@ bomb_buffer_index
 ;Todo: bomb explosion propagation
 	ldy bomb_buffer_index
 	jeq x0	;nothing to detonate
-	
-	sty bstor
-	
 	ldx check_lines.count ;size of detonation
 	dex
+	mva blast_width,x wblast 
+	mva blast_height,x hblast
+	copy_vram
+	/*
 	mva xbt,x xblast
 	mva ybt,x yblast
 	mva wbt,x wblast
@@ -333,14 +340,38 @@ bomb_buffer_index
 	mva hbt,x hblast
 	
 	mva #C_CHARDETONATION draw_detonation.ptr1
+	*/
 	
-x1	ldy bomb_buffer_index
+loop2	mva #0 change	;reset change
+	mva bomb_buffer_index bomb_buffer_iterator
+loop	ldy bomb_buffer_iterator
 	jeq x00
 	dey
 	dey
-	sty bomb_buffer_index
+	sty bomb_buffer_iterator
 	mwa bomb_buffer,y w1
 	
+	lda blast_size_buffer,y
+	a_ge wblast loop	;width is dominant so if blast width == wblast
+			;then it is final for this one
+	;grow blast width
+	add #2
+	sta blast_size_buffer,y
+	inc change
+			
+@	lda blast_size_buffer+1,y
+	a_ge hblast @+
+	;grow blast height
+	add #2
+	sta blast_size_buffer+1,y
+	inc change
+
+@	lda blast_size_buffer,y
+	tax
+	lda blast_size_buffer+1,y
+	tay
+
+	/*
 	ldy #0
 	mva #C_CHAREMPTY (w1),y ;unmark detonating bomb (to not add it again during blast propagation)
 	;trigger_push_release ;debug
@@ -348,10 +379,18 @@ x1	ldy bomb_buffer_index
 	sub16 ylinesup w1	;top-left edge
 	
 	draw_detonation
-	
-	jmp x1
+	*/
+	;ldx wblast
+	;ldy hblast
+	draw_blast
+	pause 0
+	jmp loop
 x0	rts
-x00	pause 25
+
+x00	pause 4
+	lda change
+	jne loop2
+	pause 10
 	/*ldy bstor	;bomb_buffer_top_index
 	beq x0
 	mva #0 bstor
@@ -360,19 +399,46 @@ x00	pause 25
 	jmp x1 */
 	
 	;clean up detonations
-	mwa #vram+2*32+5 w1
-	ldx #22
-x22	ldy #9
-x12	lda (w1),y
-	cmp #C_CHARDETONATION
-	bne x32
-	mva #C_CHAREMPTY (w1),y
-x32	dey
-	bpl x12
+	ldx #21	;vram lines
+	mwa #vram w1
+	mwa #vram2 w2
+
+;copy whole 2 top lines
+	ldy #31+32+5
+@	mva (w2),y (w1),y
+	dey
+	bpl @-
 	
+	add16 #64+5 w1
+	add16 #64+5 w2
+	
+clear_loop
+	ldy #31
+@	mva (w2),y (w1),y
+	dey
+	cpy #9
+	bne @-
+	
+@	lda (w1),y
+	cmp #C_CHARBOMB
+	beq @+
+	cmp #C_CHARBRICK
+	beq @+
+	mva #C_CHAREMPTY (w1),y
+@	dey
+	bpl @-1
 	add16 #32 w1
+	add16 #32 w2
 	dex
-	bne x22
+	bpl clear_loop
+	
+	;copy whole 2 bottom lines
+	ldy #31+32-5
+@	mva (w2),y (w1),y
+	dey
+	bpl @-
+
+	pause 10
 	rts
 
 ybt	dta 0,1,2,3
@@ -385,6 +451,18 @@ yblast	dta 0
 wblast	dta 0
 hblast	dta 0
 ylinesup	dta 0
+
+change	dta 0	;>1 some change to blast has been made
+bomb_buffer_iterator	dta 0
+
+blast_width
+	dta 7,7,7,7,8,11,11,13,13
+:10	dta 15
+
+blast_height
+	dta 1,3,5,7,9,11,11,13,13
+:10	dta 15
+;TODO: megabomb
 .endp
 
 .proc	draw_detonation
@@ -424,6 +502,117 @@ x6	mwa w2 w1
 	jmp x3
 xstor	dta 0
 ystor	dta 0
+.endp
+
+;draws rectangular blast and adds blast-reached bombs to bomb buffer
+;w1=contains center, x,y=width,height
+.proc	draw_blast
+	stx width
+	txa
+	lsr @
+	sta subx 
+	sub16 subx w1 ;subtract half of the width -> set left edge
+	cpy #1
+	jeq flat_blast
+;rectangular blast
+	dey
+	tya
+	lsr @
+	sta suby
+	;draw middle line
+	ldx #$4a
+	jsr set_blast_line_type
+	jsr draw_blast_line	
+	mwa w1 w1tmp
+	mva #1 repeat
+
+@	sub16 #32 w1	;line up
+	lda w1+1
+	a_lt >vram x00	;clip to beginning of vram
+	lda repeat
+	cmp suby
+	beq x1
+	jsr draw_blast_line ;inside line
+	inc repeat
+	jmp @-
+
+	;draw top line
+x1	ldx #$47	
+	jsr set_blast_line_type
+	jsr draw_blast_line
+	
+	;top part of blast is drawn, now to the bottom
+	
+x00	ldx #$4a	;set middle line type again
+	jsr set_blast_line_type
+	mwa w1tmp w1
+	mva #1 repeat
+	
+@	add16 #32 w1	;line down
+	lda w1+1
+	a_ge >vram2 x0	;clip to end of vram
+	lda repeat
+	cmp suby
+	beq x2
+	jsr draw_blast_line ;inside line
+	inc repeat
+	jmp @-
+	
+	;draw bottom line
+x2	ldx #$4d	
+	jsr set_blast_line_type
+	jsr draw_blast_line
+x0	rts
+
+flat_blast
+	ldx #$40
+	jsr set_blast_line_type
+	
+draw_blast_line	
+	ldy width
+	dey
+	lda (w1),y
+	cmp #C_CHARBOMB
+	bne @+
+	add_bomb_to_buffer
+@	lda #$42 ;right piece
+ptr3	equ *-1
+	sta (w1),y 
+	
+	dey
+@	lda (w1),y
+	cmp #C_CHARBOMB
+	bne @+
+	add_bomb_to_buffer
+@	lda #$41 ;middle piece
+ptr2	equ *-1
+	sta (w1),y
+
+	dey
+	bne @-1
+	
+	lda (w1),y
+	cmp #C_CHARBOMB
+	bne @+
+	add_bomb_to_buffer
+@	lda #$40 ;left piece
+ptr1	equ *-1
+	sta (w1),y 
+	rts
+	
+subx	dta 0
+suby	dta 0
+width	dta 0
+w1tmp	dta 0,0
+repeat	dta 0
+
+set_blast_line_type
+	stx ptr1
+	inx
+	stx ptr2
+	inx
+	stx ptr3
+	rts
 .endp
 	
 .proc	gravity
@@ -1004,13 +1193,14 @@ gamevbi	phr
 	switch_vram
 	eif
 
-	ldx #7
+	;crappy blast char animation
+/*	ldx #7
 x1	lda random
 	ora #%01010101
 	sta gamefont+C_CHARDETONATION*8,x
 	dex
 	bpl x1
-	
+*/	
 	plr
 	rti	
 	
@@ -1284,14 +1474,18 @@ x3	inc gscore,x
 	rts
 .endp
 
-;flood fill
-.proc	segmentation
-	;copy vram
+.proc	copy_vram
 	ldx #0
-x20	
+@
 :4	mva vram+:1*$100,x vram2+:1*$100,x
 	inx
-	bne x20
+	bne @-
+	rts
+.endp
+
+;flood fill
+.proc	segmentation
+	copy_vram
 
 	;starting point - running on vram copy (vram2)
 	ldx #0
