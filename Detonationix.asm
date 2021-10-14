@@ -71,10 +71,7 @@ gcounter	equ $bb ;gravity counter (vbi)
 ccounter	equ $bc ;controls counter (vbi)
 leveldone	equ $bd ;0 if level is done
 gwin	equ $be ;1=player is the winner
-fftmp_seg	equ $ef ;floodfill temp for segments
-
-C_FULLBOMB	equ $ff
-C_NOBOMB		equ $f0
+fftmp_seg	equ $bf ;floodfill temp for segments
 
 C_CHARBRICK	equ 't'*
 C_CHAREMPTY	equ " "
@@ -167,6 +164,8 @@ title	info
 	draw_background
 	mva #0 stageno
 	
+	convert_tiles
+	
 	draw_playfield
 	draw_stats
 	
@@ -183,6 +182,8 @@ title	info
 	sta gwin
 	sta gcounter
 	sta ccounter
+	
+	mva #16 next_tile.fullbomb_counter
 
 	mva #5 speed	;controls responsiveness
 	sta leveldone
@@ -191,9 +192,8 @@ title	info
 	
 	mva #4+4 xpos
 	mva #2 ypos 
-	mva ctype draw_tile.type
-	mva crotation draw_tile.rotation
-	mva cbomb draw_tile.bomb
+	mva ctype tile.type
+	mva cbomb next_tile.bomb
 	
 	;mva ctype draw_tile.type
 loop	lda gover
@@ -225,7 +225,7 @@ cloop	controls
 .endl
 
 .proc	place_tile
-	draw_tile
+	draw_current_tile
 linesloop
 	check_lines
 	lda bomb_buffer_index2
@@ -249,9 +249,8 @@ gravloop
 x1	next_tile
 	mva #4+4 xpos
 	mva #2 ypos
-	mva ctype draw_tile.type
-	mva crotation draw_tile.rotation
-	mva cbomb draw_tile.bomb
+	mva ctype tile.type
+	mva cbomb next_tile.bomb
 	mva #0 controls.handled
 	mva #100 gcounter	;instant gravity (draw)
 	validate_tile
@@ -647,7 +646,7 @@ set_blast_line_type
 	place_tile
 	
 	rts
-ok	draw_tile
+ok	draw_current_tile
 x0	rts
 grav_anc	dta 0
 .endp	
@@ -676,6 +675,7 @@ grav_anc	dta 0
 x0	rts
 
 rotate_back
+/*
 	delete_tile
 	dec crotation
 	lda crotation
@@ -689,22 +689,15 @@ rotate_back
 	and #$03
 	sta crotation
 	sta draw_tile.rotation
+*/
 	jmp err
 	
-up	delete_tile
-	inc crotation
-	lda crotation
-	and #$03
-	sta crotation
-	
-	mva crotation draw_tile.rotation
+up	store_current
+	delete_tile
+	rotate_tile
 	validate_tile
 	jeq ok
-	dec crotation
-	lda crotation
-	and #$03
-	sta crotation
-	sta draw_tile.rotation
+	restore_current
 	jmp err
 	
 down	delete_tile
@@ -717,7 +710,7 @@ dgrav	mva #0 gcounter	;reset gravity when forced move down
 	ldx speed
 	dex
 	stx ccounter	;makes falling faster than other controls
-	draw_tile
+	draw_current_tile
 	mva #0 handled
 	rts
 	
@@ -735,12 +728,12 @@ right	delete_tile
 	dec xpos
 	jmp err
 
-ok	draw_tile
+ok	draw_current_tile
 	mva #0 handled
 	sta ccounter
 	rts
 
-err	draw_tile
+err	draw_current_tile
 	rts
 	
 handled	dta 0
@@ -751,64 +744,68 @@ handled	dta 0
 	clear_next_window
 	dec_score
 	
-	mva type ctype
-	mva rotation crotation
+	dec fullbomb_counter
+	bpl x2
+	
+	ldx #8	;fullbomb every 8 tiles (stage 4->x)
+	lda stage
+	a_ge #4 @+
+	ldx #16
+@	stx fullbomb_counter
+		
+x2	mva tile.type ctype
+	;mva hflip chflip
 	mva bomb cbomb
 x1	lda random
-	and #%00000111
-	a_ge #7 x1
-	sta type
-	sta draw_tile.type
+	and #$07
+	;a_ge #8 x1
+	sta tile.type
 	lda random
-	and #$03
-	sta rotation
-	sta draw_tile.rotation
+	and #$08
+	sta hflip
+	sta prepare_tile.hflip
 	
-	add_bomb
+	prepare_tile
 		
 	mva #22 xpos
 	mva #6 ypos
-	draw_tile
+	draw_current_tile
 	rts
-type	dta 0
-rotation	dta 0
+
+hflip	dta 0
 bomb	dta 0
+fullbomb_counter	dta 0
 .endp
-	
-.proc	add_bomb
-	lda random
-	and #$07
-	beq fullbomb
-	and #$01
-	beq nobomb
+
+.proc	make_fullbomb
+	ldx tile.type
+	lda tile.dsizes,x
+	tay
+@	lda current,y
+	cmp #C_CHARBRICK
+	bne @+
+	mva #C_CHARBOMB current,y	
+@	dey
+	bpl @-1
+	rts
+.endp
+
+.proc	add_bomb_to_tile
 	;add single bomb
-	ldx next_tile.type
-	lda draw_tile.dsizes,x
+	ldx tile.type
+	lda tile.dsizes,x
 	sta size
-	txa
-	asl @
-	tax
-	mwa draw_tile.tiles,x w1 
 	
 x1	lda random
 	and #%00001111	;biggest size
 	a_ge size x1
 	tay
-	lda (w1),y
+	lda current,y
 	cmp #C_CHARBRICK
 	bne x1	;if empty find another brick	
-	sty next_tile.bomb
-	sty draw_tile.bomb
 	rts
 	
 size	dta 0
-	
-nobomb	mva #C_NOBOMB draw_tile.bomb
-	sta next_tile.bomb
-	rts
-fullbomb	mva #C_FULLBOMB draw_tile.bomb
-	sta next_tile.bomb
-	rts
 .endp
 	
 .proc	draw_background
@@ -890,155 +887,223 @@ x1	mva (w1),y (w2),y
 .endp
 
 .proc	delete_tile
-	inc draw_tile.save.delete
-	draw_tile
-	dec draw_tile.save.delete
+	inc save.delete
+	draw_current_tile
+	dec save.delete
 	rts
 .endp
 
+;try drawing, if possible it is valid
 .proc	validate_tile
-	inc draw_tile.save.validate
-	mva #0 draw_tile.save.valid	;reset validation result
-	draw_tile
-	dec draw_tile.save.validate
-	lda draw_tile.save.valid
+	inc save.validate
+	mva #0 save.valid	;reset validation result
+	draw_current_tile
+	dec save.validate
+	lda save.valid
 	rts
 .endp
 
-.proc	draw_tile
-	ldx type
-	lda dsizes,x
-	tay
-	dey
-	sty size
-	
-	txa
+.proc	store_current
+	ldx #15
+@	mva current,x store,x
+	dex
+	bpl @-
+	rts
+store	
+:16	dta 0
+.endp
+
+.proc	restore_current
+	ldx #15
+@	mva store_current.store,x current,x
+	dex
+	bpl @-
+	rts
+.endp
+
+;prepares tile into "current"
+;containing hflip and bomb(s)
+.proc	prepare_tile
+	lda tile.type
 	asl @
 	tax
-	lda tiles,x
+	lda tile.addresses,x
 	sta w1
-	lda tiles+1,x
+	lda tile.addresses+1,x
 	sta w1+1
 	
-x1	mva (w1),y current,y
+	ldx tile.type
+	lda tile.dsizes,x
+	tay
 	dey
+	sty dsize
+
+	;copy tile teplate to current
+@	lda (w1),y 
+	sta current,y
+	dey
+	bpl @-
+	
+	lda next_tile.fullbomb_counter
+	beq @+
+	add_bomb_to_tile
+
+@	ldy dsize
+x1	lda current,y 
+	cmp #"X"	;replace with charbrick
+	bne @+
+	mva #C_CHARBRICK current,y
+@	dey
 	bpl x1
 	
-	lda bomb
-	cmp #C_NOBOMB
-	beq x2
-	cmp #C_FULLBOMB
-	beq x3
-	;single bomb
-	tay
-	mva #C_CHARBOMB current,y
-	jmp x2
-x3	;full bomb
-	ldy size
-x31	lda current,y
+	lda next_tile.fullbomb_counter
+	bne x2
+	
+	;full bomb
+	ldy dsize
+@	lda current,y
 	cmp #C_CHARBRICK
-	beq x4
-	dey
-	bpl x31
-	jmp x2	
-x4	mva #C_CHARBOMB current,y
-	dey
-	bpl x31
+	bne @+
+	mva #C_CHARBOMB current,y	
+@	dey
+	bpl @-1
+
+x2	lda hflip
+	beq x0
 	
-	;end of bomb injection
-x2	ldx type
-	lda rotation
-	jeq drawIt
-	x_lt #5 rot3
-	cpx #5
-	jeq rot2
-	rotate4
-	jmp drawIt
-rot2	rotate2
-	jmp drawIt
-rot3	rotate3	
-
-drawIt	
-	ldx type
-	x_lt #5 drw3
-	cpx #5 
-	jeq drw2
-	draw4
-	jmp x0
-drw2	draw2
-	jmp x0
-drw3	draw3
-	;jmp x0
-		
-x0	rts
-
-.proc	draw4
-	lda ypos
-	asl @
+	;horizontal flip
+	ldy #15
+	mva current,y tmp
+	lda flipdata,y
 	tax
-	mwa lines,x save.ptr1
-	add16 xpos save.ptr1
-	mva #4 ptr2
-	
-	ldy #0
-	ldx #0
-x1	lda current,y
-	save
-	iny
-	inx
-	cpx #4
-ptr2	equ *-1
-	bne x1
-	add16 #32-4 save.ptr1
-	cpy #4*4
-	beq x0	;done
-	
-	lda ptr2
-	add #4	;next line
-	sta ptr2
-	jmp x1
-	
+	mva current,x current,y
+	mva tmp current,x		
 x0	rts
-
+	
+tmp	dta 0
+dsize	dta 0
+hflip	dta 0
+flipdata	dta 3,2,1,0
+	dta 7,6,5,4
+	dta $b,$a,9,8
+	dta $f,$e,$d,$c
 .endp
 
-.proc	draw3
-	lda ypos
-	asl @
-	tax
-	mwa lines,x save.ptr1
-	add16 xpos save.ptr1
-	mva #3 ptr2
+.proc	rotate_tile
+	ldx tile.type
+	lda tile.sizes,x
+	cmp #3
+	beq x3
+	cmp #2
+	beq x2
+	jsr rotate4
+	rts
+x2	jsr rotate2
+	rts
+x3	jsr rotate3
+	rts
+tmp	dta 0
 	
-	ldy #0
-	ldx #0
-x1	lda current,y
-	save
-	iny
-	inx
-	cpx #3
-ptr2	equ *-1
-	bne x1
-	add16 #32-3 save.ptr1
-	cpy #3*3
-	beq x0	;done
-	
-	lda ptr2
-	add #3	;next line
-	sta ptr2
-	jmp x1
-	
-x0	rts
+rotate2
+	mva current tmp
+	mva current+1 current
+	mva current+2 current+1
+	mva current+3 current+2
+	mva tmp current+3
+	rts
 
-.endp
+rotate3
+; 012
+; 345
+; 678	
+	;diagonals
+	mva current tmp
+	mva current+2 current
+	mva current+8 current+2
+	mva current+6 current+8
+	mva tmp current+6
 	
-.proc	draw2
+	;orthogonals
+	mva current+1 tmp
+	mva current+5 current+1
+	mva current+7 current+5
+	mva current+3 current+7
+	mva tmp current+3 
+	
+	;4 is not moving at all
+	rts
+
+rotate4
+; 0123
+; 4567
+; 89ab
+; cdef
+
+	ldx #15
+@	lda matches,x
+	tay
+	mva current,y tmp
+	mva current,x current,y
+	mva tmp current,x
+	dex
+	bpl @-
+	rts
+matches	dta 3,7,$b,$f
+	dta 2,6,$a,$e
+	dta 1,5,9,$d
+	dta 0,4,8,$c
+.endp
+
+;tile has to be prepared first!
+.proc	draw_current_tile
 	lda ypos
 	asl @
 	tax
-	mwa lines,x save.ptr1
-	add16 xpos save.ptr1
 	
+	lda lines,x
+	add xpos
+	sta save.ptr1
+	mva lines+1,x save.ptr1+1
+
+	ldx tile.type
+	lda tile.sizes,x
+	cmp #3
+	beq draw3
+	cmp #2
+	beq draw2
+	
+draw4
+	ldy #15
+@	lda dr4table,y
+	tax
+	lda current,y
+	save
+	dey
+	bne @-
+	rts
+
+dr4table	
+:4	dta 0+:1*32, 1+:1*32, 2+:1*32, 3+:1*32
+
+draw3
+	lda lines,x
+	add xpos
+	sta save.ptr1
+	mva lines+1,x save.ptr1+1
+	
+	ldy #8
+@	lda dr3table,y
+	tax
+	lda current,y
+	save
+	dey
+	bne @-
+	rts	
+
+dr3table
+:3	dta 0+:1*32, 1+:1*32, 2+:1*32
+	
+draw2
 	lda current
 	ldx #0
 	save
@@ -1053,7 +1118,9 @@ x0	rts
 	save
 	rts
 .endp
-	
+
+;saves (draws) single character to ptr1,x position
+;does not change X,Y	
 .proc	save
 	cmp #C_CHAREMPTY
 	beq x0	;draw only those that are not empty
@@ -1086,90 +1153,18 @@ valid	dta 0	;>0 - invalid
 .endp
 
 	
-.proc	rotate2
-	ldx rotation
-x1	mva current tmp
-	mva current+1 current
-	mva current+2 current+1
-	mva current+3 current+2
-	mva tmp current+3
-	dex
-	bne x1
-	rts
-tmp 	dta 0
-.endp
 
-.proc	rotate3
-	ldx rotation
-; 012
-; 345
-; 678	
-	;diagonals
-x1	mva current tmp
-	mva current+2 current
-	mva current+8 current+2
-	mva current+6 current+8
-	mva tmp current+6
-	
-	;orthogonals
-	mva current+1 tmp
-	mva current+5 current+1
-	mva current+7 current+5
-	mva current+3 current+7
-	mva tmp current+3 
-	
-	;4 is not moving at all
-	dex
-	bne x1
-	
-	rts
-tmp	dta 0
-.endp
+.local	tile
+addresses
+:8	dta a(tile:1)
 
-.proc	rotate4
-; 0123
-; 4567
-; 89ab
-; cdef
-	mva rotation rot_local
-
-x3	ldx #15
-x1	mva current,x tmp,x
-	dex
-	bpl x1
-	
-	ldx #15
-x2	lda matches,x
-	tay
-	mva tmp,y current,x
-	dex
-	bpl x2
-	
-	dec rot_local
-	bne x3
-	
-	rts
-matches	dta 3,7,$b,$f
-	dta 2,6,$a,$e
-	dta 1,5,9,$d
-	dta 0,4,8,$c
-tmp
-:16	dta 0
-rot_local	dta 0
-.endp
-
-	
-tiles	dta a(tile0,tile1,tile2,tile3,tile4,tile5,tile6)
-sizes	dta 3,3,3,3,3,2,4
-dsizes	dta 9,9,9,9,9,4,16
+sizes	dta 3,3,3,3,2,2,2,4
+dsizes	dta 9,9,9,9,4,4,4,16
 type	dta 1
-rotation	dta 0
-bomb	dta C_NOBOMB
-size	dta 0
+.endl
+
 current	
 :16	dta ' '
-
-.endp
 
 lines
 :25	dta a(vram+32*:1)
@@ -1228,48 +1223,40 @@ playfield
 	dta 'rqqqqqqqqqqs'		
 
 
-/* test
-:10	dta 'p   u      p'*
-	dta 'p  tutu    p'*
-	dta 'p  t   t u p'*
-	dta 'p  t t t u p'*
-	dta 'p  t   u   p'*
-:2	dta 'p   uu     p'*
-:8	dta 'ptt       tp'*
-	
-	dta 'rqqqqqqqqqqs'
-*/
-
+;# = regular brick which can be bomb
+;X = regular brick which cannot be bomb
 ;3x3
 tile0	dta "   "
 	dta " ##"
 	dta "## "
 	
 tile1	dta "   "
-	dta "## "
-	dta " ##"
+	dta "#X#"
+	dta " # "
 	
 tile2	dta "   "
-	dta "###"
-	dta " # "
-	
-tile3	dta " # "
-	dta " # "
-	dta " ##"
+	dta "#X#"
+	dta "  #"
 
-tile4	dta " # "
-	dta " # "
-	dta "## "
+tile3	dta "   "
+	dta "###"
+	dta "   "
 	
 ;2x2	
+tile4	dta "##"
+	dta "##"
+	
 tile5	dta "##"
+	dta "# "
+	
+tile6	dta "  "
 	dta "##"
 
 ;4x4	
-tile6	dta "  # "
-	dta "  # "
-	dta "  # "
-	dta "  # "
+tile7	dta "    "
+	dta "    "
+	dta "#XX#"
+	dta "    "
 	
 	dta $ff
 	
@@ -1282,8 +1269,8 @@ x1	lda tile0,x
 	cmp #"#"
 	bne @+
 	lda #C_CHARBRICK
-@	sta tile0,x
-	inx
+	sta tile0,x
+@	inx
 	bne x1
 x0	rts
 .endp
@@ -1303,7 +1290,6 @@ x0	rts
 :4	mva #64+32*:1 hposp0+:1
 :4	mva #$18 colpm0+:1
 :4	mva #3 sizep0+:1
-	convert_tiles
 	rts
 .endp
 	
