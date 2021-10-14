@@ -28,7 +28,6 @@ vcount	equ $d40b
 nmien	equ $d40e
 nmist	equ $d40f
 
-mypmbase	equ $7c00
 vram	equ $1000
 vram2	equ $1400
 
@@ -37,8 +36,10 @@ w1lbuf	equ $1800
 w1hbuf	equ $1900
 xbuf	equ $1a00
 ybuf	equ $1b00
-
+bomb_buffer	equ $1c00	;L0200
+blast_size_buffer	equ $1e00	;L0200
 code	equ $2000
+mypmbase	equ $7c00
 msx	equ $9000
 player	equ $a400
 
@@ -227,15 +228,16 @@ cloop	controls
 	draw_tile
 linesloop
 	check_lines
-	lda bomb_buffer_index
+	lda bomb_buffer_index2
 	beq x1
+	copy_bomb_buffer
 	detonate_bombs
 	segmentation
 gravloop
 	ift debug_gravity == 1
 	wait_for_start
 	eif
-	pause 3
+	pause 1
 	sticky_gravity
 	cmp #0 ;nothing felt
 	bne gravloop
@@ -260,7 +262,7 @@ ok	rts
 	
 .proc	check_lines
 	mva #0 count
-	sta bomb_buffer_index
+	sta bomb_buffer_index2
 	
 	ldx #23*2
 x2	mwa lines,x w1
@@ -302,36 +304,47 @@ x1	mva #C_CHARDETONATION (w1),y	;mark bomb that is detonating
 .endp
 
 .proc	add_bomb_to_buffer
-	ldx bomb_buffer_index
+	ldx bomb_buffer_index2
 	tya
 	add w1
-	sta bomb_buffer,x
+	sta bomb_buffer+$100,x
 	lda #0	;TODO: use $80 for mega bomb
 	adc w1+1
-	sta bomb_buffer+1,x
-	mva #1 blast_size_buffer,x	;set initial blast width to 1
-	sta blast_size_buffer+1,x	;set initial blast height to 1
-	inc bomb_buffer_index
-	inc bomb_buffer_index
+	sta bomb_buffer+$100+1,x
+	mva #1 blast_size_buffer+$100,x	;set initial blast width to 1
+	sta blast_size_buffer+$100+1,x	;set initial blast height to 1
+	inc bomb_buffer_index2
+	inc bomb_buffer_index2
 	rts
 .endp
 
-bomb_buffer
-:256	dta 0
-blast_size_buffer
-:256	dta 0
-bomb_buffer_index
-	dta 0
+;copies buffer1 -> buffer2 and resets buffer1
+.proc	copy_bomb_buffer
+	ldx #0
+@	mva bomb_buffer+$100,x bomb_buffer,x
+	mva blast_size_buffer+$100,x blast_size_buffer,x
+	inx
+	bne @-
+	mva bomb_buffer_index2 bomb_buffer_index
+	mva #0 bomb_buffer_index2
+	rts
+.endp
+
+bomb_buffer_index	dta 0
+bomb_buffer_index2	dta 0
 	
 .proc	detonate_bombs
 ;Todo: bomb explosion propagation
+;clear should be executed after each bombbuffer is blown
+;important: do not extend bombbuffer with new bombs, rather store it elsewhere
+;and detonate after clear
 	ldy bomb_buffer_index
 	jeq x0	;nothing to detonate
 	ldx check_lines.count ;size of detonation
 	dex
 	mva blast_width,x wblast 
 	mva blast_height,x hblast
-	copy_vram
+loop3	copy_vram
 	/*
 	mva xbt,x xblast
 	mva ybt,x yblast
@@ -344,6 +357,7 @@ bomb_buffer_index
 	
 loop2	mva #0 change	;reset change
 	mva bomb_buffer_index bomb_buffer_iterator
+	pause 0
 loop	ldy bomb_buffer_iterator
 	jeq x00
 	dey
@@ -383,11 +397,10 @@ loop	ldy bomb_buffer_iterator
 	;ldx wblast
 	;ldy hblast
 	draw_blast
-	pause 0
 	jmp loop
 x0	rts
 
-x00	pause 4
+x00	pause 1
 	lda change
 	jne loop2
 	pause 10
@@ -402,7 +415,7 @@ x00	pause 4
 	ldx #21	;vram lines
 	mwa #vram w1
 	mwa #vram2 w2
-
+	pause 0
 ;copy whole 2 top lines
 	ldy #31+32+5
 @	mva (w2),y (w1),y
@@ -439,6 +452,11 @@ clear_loop
 	bpl @-
 
 	pause 10
+	
+	copy_bomb_buffer
+	lda bomb_buffer_index
+	jne loop3
+	
 	rts
 
 ybt	dta 0,1,2,3
@@ -1925,7 +1943,7 @@ x0	sta leveldone
 .endp
 
 stagedata
-	;ins 'stages\stagex.dat' ;debug
+	ins 'stages\stagex.dat' ;debug
 .rept 9,#+1
 	ins 'stages\stage0:1.dat'
 .endr
