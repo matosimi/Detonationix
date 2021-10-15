@@ -53,14 +53,14 @@ ntsctimer	equ $a9 ;6th frame counter
 stageno	equ $aa ;current stage
 xpos	equ $ab ;x position of tile
 ypos	equ $ac ;y position of tile
-ctype	equ $ad ;current tile type
+;ctype	equ $ad ;current tile type
 crotation	equ $ae ;current tile rotation
 stick	equ $af ;porta cut to 1 player
 ztmp	equ $b0 ;zero page temp
 speed	equ $b1 ;controls speed 
 speed_anc	equ $b2 ;speed anchor
 gravtick	equ $b3 ;gravity speed (level)
-cbomb	equ $b4 ;current bomb
+;cbomb	equ $b4 ;current bomb
 ;bstor	equ $b5 ;bomb index storage
 tag	equ $b6 ;used for floodfill
 tagcount	equ $b7 ;number of tagged
@@ -83,6 +83,7 @@ debug_no_music	equ 1
 debug_skip_title	equ 1
 debug_vram_flicker	equ 0
 debug_gravity	equ 0
+debug_tiledemo	equ 0
 
 	org code
 .local	init
@@ -174,7 +175,7 @@ title	info
 	reset_gscore
 	
 	next_tile
-	next_tile
+;	next_tile
 	
 	reset_score
 	
@@ -192,8 +193,12 @@ title	info
 	
 	mva #4+4 xpos
 	mva #2 ypos 
-	mva ctype tile.type
-	mva cbomb next_tile.bomb
+	;mva ctype tile.type
+	;mva cbomb next_tile.bomb
+	ift debug_tiledemo==1
+	tiledemo
+	eif
+	
 	
 	;mva ctype draw_tile.type
 loop	lda gover
@@ -249,8 +254,8 @@ gravloop
 x1	next_tile
 	mva #4+4 xpos
 	mva #2 ypos
-	mva ctype tile.type
-	mva cbomb next_tile.bomb
+	;mva ctype tile.type
+	;mva cbomb next_tile.bomb
 	mva #0 controls.handled
 	mva #100 gcounter	;instant gravity (draw)
 	validate_tile
@@ -675,21 +680,12 @@ grav_anc	dta 0
 x0	rts
 
 rotate_back
-/*
+	store_current
 	delete_tile
-	dec crotation
-	lda crotation
-	and #$03
-	sta crotation
-	mva crotation draw_tile.rotation
+:3	rotate_tile
 	validate_tile
 	jeq ok
-	inc crotation
-	lda crotation
-	and #$03
-	sta crotation
-	sta draw_tile.rotation
-*/
+	restore_current
 	jmp err
 	
 up	store_current
@@ -753,9 +749,9 @@ handled	dta 0
 	ldx #16
 @	stx fullbomb_counter
 		
-x2	mva tile.type ctype
+x2	;mva tile.type ctype
 	;mva hflip chflip
-	mva bomb cbomb
+	;mva bomb cbomb
 x1	lda random
 	and #$07
 	;a_ge #8 x1
@@ -794,18 +790,19 @@ fullbomb_counter	dta 0
 	;add single bomb
 	ldx tile.type
 	lda tile.dsizes,x
-	sta size
+	sta dsize
 	
-x1	lda random
+@	lda random
 	and #%00001111	;biggest size
-	a_ge size x1
+	a_ge dsize @-
 	tay
 	lda current,y
 	cmp #C_CHARBRICK
-	bne x1	;if empty find another brick	
+	bne @-	;if empty find another brick	
+	mva #C_CHARBOMB current,y
 	rts
 	
-size	dta 0
+dsize	dta 0
 .endp
 	
 .proc	draw_background
@@ -947,8 +944,8 @@ store
 	lda next_tile.fullbomb_counter
 	beq @+
 	add_bomb_to_tile
-
-@	ldy dsize
+@
+	ldy dsize
 x1	lda current,y 
 	cmp #"X"	;replace with charbrick
 	bne @+
@@ -969,47 +966,122 @@ x1	lda current,y
 	bpl @-1
 
 x2	lda hflip
-	beq x0
+	bne x0
 	
 	;horizontal flip
+	lda dsize
+	cmp #8 
+	beq x4
+	cmp #3
+	beq x5
 	ldy #15
-	mva current,y tmp
-	lda flipdata,y
+
+;4x4 flip
+	ldy #7
+@	lda flipdata4,y
 	tax
-	mva current,x current,y
-	mva tmp current,x		
+	mva current,x tmp
+	stx tmpx
+	lda flipdata4+8,y
+	tax
+	lda current,x
+	sta tmp+1
+	mva tmp current,x
+	ldx tmpx
+	mva tmp+1 current,x
+	dey
+	bpl @-		
 x0	rts
+
+;3x3 flip
+x4	ldy #2
+@	lda flipdata3,y
+	tax
+	mva current,x tmp
+	stx tmpx
+	lda flipdata3+3,y
+	tax
+	lda current,x
+	sta tmp+1
+	mva tmp current,x
+	ldx tmpx
+	mva tmp+1 current,x
+	dey
+	bpl @-
+	rts
 	
-tmp	dta 0
+;2x2 flip
+x5	mva current tmp
+	mva current+1 current
+	mva tmp current+1
+		
+	mva current+2 tmp
+	mva current+3 current+2
+	mva tmp current+3
+	rts
+	
+tmp	dta 0,0
+tmpx	dta 0
 dsize	dta 0
 hflip	dta 0
-flipdata	dta 3,2,1,0
-	dta 7,6,5,4
-	dta $b,$a,9,8
-	dta $f,$e,$d,$c
+;0,1,2,3
+;4,5,6,7
+;8,9,a,b
+;c,d,e,f
+flipdata4 dta 0,4,8,$c,1,5,9,$d
+	dta 3,7,$b,$f,2,6,$a,$e
+	
+;0,1,2
+;3,4,5
+;6,7,8
+flipdata3	dta 0,3,6
+	dta 2,5,8
 .endp
 
 .proc	rotate_tile
 	ldx tile.type
 	lda tile.sizes,x
 	cmp #3
-	beq x3
+	beq rotate3
 	cmp #2
-	beq x2
-	jsr rotate4
-	rts
-x2	jsr rotate2
-	rts
-x3	jsr rotate3
-	rts
-tmp	dta 0
+	beq rotate2
+
+rotate4
+; 0123
+; 4567
+; 89ab
+; cdef
+
+	ldx #15
+@	lda matches,x
+	tay
+	mva current,y robuff,x
+	dex
+	bpl @-
 	
+	ldx #15
+@	mva robuff,x current,x
+	dex
+	bpl @-
+	
+	rts
+
+matches	dta 3,7,$b,$f
+	dta 2,6,$a,$e
+	dta 1,5,9,$d
+	dta 0,4,8,$c
+robuff	
+:16	dta 0
+tmp	dta 0
+
+; 01
+; 23	
 rotate2
 	mva current tmp
 	mva current+1 current
-	mva current+2 current+1
-	mva current+3 current+2
-	mva tmp current+3
+	mva current+3 current+1
+	mva current+2 current+3
+	mva tmp current+2
 	rts
 
 rotate3
@@ -1032,26 +1104,6 @@ rotate3
 	
 	;4 is not moving at all
 	rts
-
-rotate4
-; 0123
-; 4567
-; 89ab
-; cdef
-
-	ldx #15
-@	lda matches,x
-	tay
-	mva current,y tmp
-	mva current,x current,y
-	mva tmp current,x
-	dex
-	bpl @-
-	rts
-matches	dta 3,7,$b,$f
-	dta 2,6,$a,$e
-	dta 1,5,9,$d
-	dta 0,4,8,$c
 .endp
 
 ;tile has to be prepared first!
@@ -1079,17 +1131,13 @@ draw4
 	lda current,y
 	save
 	dey
-	bne @-
+	bpl @-
 	rts
 
 dr4table	
 :4	dta 0+:1*32, 1+:1*32, 2+:1*32, 3+:1*32
 
 draw3
-	lda lines,x
-	add xpos
-	sta save.ptr1
-	mva lines+1,x save.ptr1+1
 	
 	ldy #8
 @	lda dr3table,y
@@ -1097,7 +1145,7 @@ draw3
 	lda current,y
 	save
 	dey
-	bne @-
+	bpl @-
 	rts	
 
 dr3table
@@ -1105,13 +1153,13 @@ dr3table
 	
 draw2
 	lda current
-	ldx #0
+	ldx #32
 	save
 	lda current+1
 	inx
 	save
 	lda current+2
-	ldx #32
+	ldx #64
 	save
 	lda current+3
 	inx
@@ -1164,7 +1212,7 @@ type	dta 1
 .endl
 
 current	
-:16	dta ' '
+:16	dta " "
 
 lines
 :25	dta a(vram+32*:1)
@@ -1239,7 +1287,7 @@ tile2	dta "   "
 	dta "  #"
 
 tile3	dta "   "
-	dta "###"
+	dta "#X#"
 	dta "   "
 	
 ;2x2	
@@ -1990,5 +2038,42 @@ C_LUM	equ $8
 :6	dta [:1+1]*$10+C_LUM
 
 .endr
+
+
+	ift debug_tiledemo==1
+.proc	tiledemo
+	mva #0 prepare_tile.hflip
+x2	mva #7 tp
+	
+	lda #0
+	ldx #0
+@
+:4	sta vram+:1*$100,x
+	dex
+	bne @-
+	
+x1	mva tp tile.type
+	asl @
+	asl @
+	sta xpos
+	mva #5 ypos
+	
+	prepare_tile
+	rotate_tile
+	draw_current_tile
+	dec tp
+	bpl x1
+	
+	pause 25
+	
+	lda prepare_tile.hflip
+	eor #$01
+	sta prepare_tile.hflip
+	jmp x2
+	rts
+tp	dta 0
+.endp	
+	eif
+
 
 	run game
