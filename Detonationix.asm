@@ -28,20 +28,21 @@ vcount	equ $d40b
 nmien	equ $d40e
 nmist	equ $d40f
 
-vram	equ $1000
-vram2	equ $1400
+vramtop		equ $0f00	;contains 2 top lines of vram
+vram		equ $1000
+vram2		equ $1400
 
 ;flood fill buffers
-w1lbuf	equ $1800
-w1hbuf	equ $1900
-xbuf	equ $1a00
-ybuf	equ $1b00
+w1lbuf		equ $1800
+w1hbuf		equ $1900
+xbuf		equ $1a00
+ybuf		equ $1b00
 bomb_buffer	equ $1c00	;L0200
 blast_size_buffer	equ $1e00	;L0200
-code	equ $2000
-mypmbase	equ $7c00
-msx	equ $9000
-player	equ $a400
+code		equ $2000
+mypmbase		equ $7c00
+msx		equ $9000
+player		equ $a400
 
 ;variables
 vbi_ptr	equ $a0
@@ -78,6 +79,8 @@ C_CHAREMPTY	equ " "
 C_CHARBOMB	equ 'u'
 C_CHARDETONATION	equ $4b
 C_CHARGROUNDED	equ $ff
+C_LINES		equ 23		;zero based (24 together)
+C_BOTTOM_LINE	equ C_LINES*32+5	;bottom-left corner of playfield
 
 debug_no_music	equ 1
 debug_skip_title	equ 1
@@ -192,7 +195,7 @@ title	info
 	;init new tile
 	
 	mva #4+4 xpos
-	mva #2 ypos 
+	mva #0 ypos 
 	;mva ctype tile.type
 	;mva cbomb next_tile.bomb
 	ift debug_tiledemo==1
@@ -252,16 +255,16 @@ gravloop
 
 	
 x1	next_tile
-	mva #4+4 xpos
-	mva #2 ypos
+@	mva #4+4 xpos
+	mva #0 ypos
 	;mva ctype tile.type
 	;mva cbomb next_tile.bomb
 	mva #0 controls.handled
-	mva #100 gcounter	;instant gravity (draw)
 	validate_tile
 	jeq ok
 	mva #1 gover ;game over
-ok	rts
+ok	draw_current_tile
+	rts
 .endp
 	
 .proc	check_lines
@@ -649,7 +652,9 @@ set_blast_line_type
 	jeq ok
 	dec ypos
 	place_tile
-	
+	count_if_more_than_10_blocks
+	beq x0
+	make_fullbomb
 	rts
 ok	draw_current_tile
 x0	rts
@@ -766,6 +771,7 @@ x1	lda random
 	mva #22 xpos
 	mva #6 ypos
 	draw_current_tile
+	mva #0 gcounter
 	rts
 
 hflip	dta 0
@@ -812,6 +818,12 @@ x1
 
 	inx
 	bne x1
+	
+	;fill vramtop (covers top 2 lines of playfield)
+	ldx #63
+@	mva data+32*4,x vramtop,x
+	dex
+	bpl @-
 	rts
 ;playfield background - vanishing tetris pieces
 data	ins 'bg2_narr/bg2_narrow.scr'
@@ -862,20 +874,25 @@ stats	dta d'yqqqqqqz'*
 	
 .proc	draw_playfield
 	
-	mwa #playfield+24 w1
-	mwa #vram+32*2+4 w2
-	ldx #22
+	mwa #playfield w1
+	mwa #vram+4 w2
+	ldx #23
 x2	ldy #11
 x1	mva (w1),y (w2),y
 	dey
 	bpl x1
-	
-	add16 #12 w1
 	add16 #32 w2
 	
 	dex
 	bpl x2
 
+	;bottom part
+	add16 #12 w1
+	ldy #11
+@	mva (w1),y (w2),y
+	dey
+	bpl @-
+	
 	mva #1 load_stage.noanim
 	load_stage
 	mva #0 load_stage.noanim
@@ -1266,9 +1283,8 @@ x1	lda random
 	rti	
 	
 playfield
-
-:24	dta 'p          p'*
-	dta 'rqqqqqqqqqqs'		
+	dta d'p',d'          ',d'p'*
+	dta d'rqqqqqqqqqqs'		
 
 
 ;# = regular brick which can be bomb
@@ -1302,10 +1318,10 @@ tile6	dta "  "
 
 ;4x4	
 tile7	dta "    "
-	dta "    "
 	dta "#XX#"
 	dta "    "
-	
+	dta "    "
+		
 	dta $ff
 	
 ;switches # -> charbrick
@@ -1353,8 +1369,10 @@ gamefont	ins 'deto.fnt'
 titlefont	ins 'title\detx_title.fnt'
 gamedl	dta $70,$70+$80
 	dta $44+$80
-gdvrptr	dta a(vram)
-:25	dta 4+$80
+	dta a(vram),$84
+	dta $44+$80
+gdvrptr	dta a(vram+64)
+:23	dta 4+$80
 	dta $41,a(gamedl)
 	
 titledl	
@@ -1688,6 +1706,35 @@ ffindex	dta 0
 	rts
 .endp
 
+;return in Z-flag
+.proc	count_if_more_than_10_blocks
+	mwa #vram+(23)*32+5 w1
+	ldx #0	;number of blocks in playfield
+x6	ldy #9
+	mva #0 empties
+@	lda (w1),y
+	cmp #C_CHAREMPTY
+	beq x3
+	inx
+	x_ge #10 x1	;>= 10
+	jmp x2
+x3	inc empties
+x2	dey
+	bpl @-
+	sub16 #32 w1
+	lda empties
+	cmp #10
+	beq x4		;there is no more blocks above so finish
+	jmp x6
+	
+x1	lda #0
+	rts
+x4	lda #$ff
+	rts
+	
+empties	dta 0	;how many empty blocks are in the current line
+.endp
+
 ;moves down each segment that does not touch bottom line
 ;returns number of bricks that fell in A
 .proc	sticky_gravity
@@ -1737,22 +1784,6 @@ x3	dey
 	bpl x5
 	lda ztmp	
 	rts
-
-/*.proc	delete_current_segment
-	sta tag
-	ldx #0
-x2	
-.rept 4,#
-	lda vram2+:1*$100,x
-	cmp tag
-	bne x1:1
-	mva #C_CHAREMPTY vram2+:1*$100,x	
-x1:1	
-.endr
-	dex
-	bne x2
-	rts
-.endp */
 
 ;uses A,Y
 .proc	ground_touching_ground
@@ -1866,6 +1897,7 @@ x1	sta (w1),y
 	lda #40		;lowest game speed
 	sub stageno	;sub stage number
 	sta gravtick 	;speed up game every stage
+	next_tile		;do not continue with tile from previous stage
 	rts
 winner
 	mva #C_CHARDETONATION fill_playfield.character
@@ -2056,10 +2088,10 @@ x1	mva tp tile.type
 	asl @
 	asl @
 	sta xpos
-	mva #5 ypos
+	mva #0 ypos
 	
 	prepare_tile
-	rotate_tile
+	;rotate_tile
 	draw_current_tile
 	dec tp
 	bpl x1
