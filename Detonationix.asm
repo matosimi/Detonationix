@@ -80,6 +80,7 @@ C_CHARBOMB	equ 'u'
 C_CHARDETONATION	equ $4b
 C_CHARGROUNDED	equ $ff
 C_LINES		equ 23		;zero based (24 together)
+C_TOP_LINE	equ 5		;top-left corner of playfield
 C_BOTTOM_LINE	equ C_LINES*32+5	;bottom-left corner of playfield
 
 debug_no_music	equ 1
@@ -1559,7 +1560,7 @@ x3	inc gscore,x
 
 	;starting point - running on vram copy (vram2)
 	ldx #0
-	mwa #vram2+2*32+5 w1
+	mwa #vram2+C_TOP_LINE w1
 	mva #"1" tag
 	ldy #0
 	;search for first filled byte
@@ -1574,7 +1575,7 @@ x1	lda (w1),y
 	bpl x1
 	add16 #32 w1
 	inx
-	cpx #22
+	cpx #C_LINES+1
 	bne x2
 	
 	;wait_for_start ;debug
@@ -1601,7 +1602,7 @@ l1	iny
 	;down
 d2	add16 #32 w1
 	inx
-	cpx #22
+	cpx #C_LINES+1
 	beq d1
 	tag_it
 	cmp tag
@@ -1708,7 +1709,7 @@ ffindex	dta 0
 
 ;return in Z-flag
 .proc	count_if_more_than_10_blocks
-	mwa #vram+(23)*32+5 w1
+	mwa #vram+C_BOTTOM_LINE w1
 	ldx #0	;number of blocks in playfield
 x6	ldy #9
 	mva #0 empties
@@ -1753,9 +1754,9 @@ x1	dey
 	
 	;all segments touching bottom line are grounded = $ff
 	;only falling segments remained, so move them down	
-	mwa #vram2+(2+20)*32+5 w2	;bottom line-1
-	mwa #vram+(2+20)*32+5 w1
-	ldx #20	;lines
+	mwa #vram2+C_BOTTOM_LINE-32 w2	;bottom line-1
+	mwa #vram+C_BOTTOM_LINE-32 w1
+	ldx #C_LINES-1	;lines
 x5	ldy #9
 x4	lda (w2),y
 	cmp #C_CHAREMPTY
@@ -1787,7 +1788,7 @@ x3	dey
 
 ;uses A,Y
 .proc	ground_touching_ground
-	mwa #vram2+(1+21)*32+5 ptr1 ;1 above bottom line
+	mwa #vram2+C_BOTTOM_LINE-32 ptr1 ;1 above bottom line
 	mva #20 lines
 x2	ldy #9
 x1	jsr load_vram2_y
@@ -1817,7 +1818,7 @@ x1	jsr load_vram2_y
 	rts
 
 load_vram2_y
-	lda vram2+(1+21)*32+5,y
+	lda vram2+C_BOTTOM_LINE-32,y
 ptr1	equ *-2
 	rts
 
@@ -1829,7 +1830,7 @@ current_segment	dta 0
 ;uses A,Y
 .proc	ground_bottom_line
 	ldy #9
-x1	lda vram2+(2+21)*32+5,y
+x1	lda vram2+C_BOTTOM_LINE,y
 	cmp #C_CHAREMPTY
 	beq @+
 	cmp #C_CHARGROUNDED
@@ -1844,15 +1845,15 @@ x1	lda vram2+(2+21)*32+5,y
 .proc	ground_current_segment
 	sta tag
 	mva #20 lines
-	mwa #vram2+(2+21)*32+5 ptr1
+	mwa #vram2+C_BOTTOM_LINE ptr1
 x2	ldx #9
-x1	lda vram2+(2+21)*32+5,x
+x1	lda vram2+C_BOTTOM_LINE,x
 ptr1	equ *-2
 	cmp tag
 	bne @+
 	mwa ptr1 ptr2
 	lda #C_CHARGROUNDED
-	sta vram2+(2+21)*32+5,x
+	sta vram2+C_BOTTOM_LINE,x
 ptr2	equ *-2
 @	dex
 	bpl x1
@@ -1865,8 +1866,8 @@ lines	dta 0
 .endp
 
 .proc	fill_playfield
-	mwa #vram+2*32+5 w1
-	ldx #22
+	mwa #vram+C_TOP_LINE w1
+	ldx #C_LINES
 x2	ldy #9
 	lda #C_CHARBRICK
 character	equ *-1	
@@ -1878,7 +1879,7 @@ x1	sta (w1),y
 	
 	add16 #32 w1
 	dex
-	bne x2
+	bpl x2
 	rts
 .endp	
 
@@ -1935,10 +1936,20 @@ text	dta d"        "
 	lda stageno
 	asl @
 	tax
-	mwa #vram+2*32+5 w1
+	mwa #vram+C_TOP_LINE w1
 	mwa stages,x w2
 	
-	ldx #22
+	ldx #2	;empty first two lines (above stage data)
+@	ldy #9
+	lda #C_CHAREMPTY
+@	sta (w1),y
+	dey
+	bpl @-
+	add16 #32 w1
+	dex
+	bne @-1
+		
+	ldx #22	;lines of stage data
 x2	ldy #9
 	
 x1	lda (w2),y
@@ -1995,10 +2006,10 @@ text	dta d"      "
 	dta d"      "
 .endp
 
-;sets leveldone=0 if level is done
+;sets leveldone=0 if level is done (bottom line empty)
 .proc	check_level_done
 	ldx #9
-x1	lda vram+(2+21)*32+5,x
+x1	lda vram+C_BOTTOM_LINE,x
 	cmp #C_CHAREMPTY
 	bne x0
 	dex
