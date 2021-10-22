@@ -238,6 +238,7 @@ cloop	controls
 
 .proc	place_tile
 	draw_current_tile
+	mva #1 detonate_bombs.consequent_detonation	;set to 1st run
 linesloop
 	count_full_lines
 	lda bomb_buffer_index2
@@ -252,7 +253,7 @@ gravloop
 	eif
 	pause 1
 	sticky_gravity
-	cmp #0 ;nothing felt
+	cmp #0 ;nothing fell
 	bne gravloop
 	check_level_done
 	jmp linesloop
@@ -406,26 +407,19 @@ bomb_buffer_index	dta 0
 bomb_buffer_index2	dta 0
 	
 .proc	detonate_bombs
-;Todo: bomb explosion propagation
+;bomb explosion propagation
 ;clear should be executed after each bombbuffer is blown
 ;important: do not extend bombbuffer with new bombs, rather store it elsewhere
 ;and detonate after clear
 	ldy bomb_buffer_index
 	jeq x0	;nothing to detonate
 	ldx count_full_lines.count ;size of detonation
+	lda consequent_detonation
+	beq @+
 	dex
-	mva blast_width,x wblast 
+@	mva blast_width,x wblast 
 	mva blast_height,x hblast
 loop3	copy_vram
-	/*
-	mva xbt,x xblast
-	mva ybt,x yblast
-	mva wbt,x wblast
-	mva ylines,x ylinesup
-	mva hbt,x hblast
-	
-	mva #C_CHARDETONATION draw_detonation.ptr1
-	*/
 	
 loop2	mva #0 change	;reset change
 	mva bomb_buffer_index bomb_buffer_iterator
@@ -470,7 +464,6 @@ loop	ldy bomb_buffer_iterator
 	;ldy hblast
 	draw_blast
 	jmp loop
-x0	rts
 
 x00	pause 1
 	lda change
@@ -528,8 +521,8 @@ clear_loop
 	copy_bomb_buffer
 	lda bomb_buffer_index
 	jne loop3
-	
-	rts
+	mva #0 consequent_detonation	;set flag for +1 detonation size in next loops
+x0	rts
 
 ybt	dta 0,1,2,3
 xbt	dta 3,4,5,6
@@ -552,7 +545,9 @@ blast_width
 blast_height
 	dta 1,3,5,7,9,11,11,13,13
 :10	dta 15
+consequent_detonation	dta 1
 ;TODO: megabomb
+
 .endp
 
 .proc	draw_detonation
@@ -1434,7 +1429,7 @@ gamefont	ins 'deto.fnt'
 titlefont	ins 'title\detx_title.fnt'
 gamedl	dta $70,$70+$80
 	dta $44+$80
-	dta a(vram),$84
+	dta a(vramtop),$84
 	dta $44+$80
 gdvrptr	dta a(vram+64)
 :23	dta 4+$80
