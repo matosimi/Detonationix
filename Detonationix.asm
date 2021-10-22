@@ -79,6 +79,9 @@ C_CHAREMPTY	equ " "
 C_CHARBOMB	equ 'u'
 C_CHARDETONATION	equ $4b
 C_CHARGROUNDED	equ $ff
+C_CHARFULLLINE	equ $f6
+C_CHARFULLLINEBMB	equ $77
+C_CHARBOMBMARK	equ $78	;bomb marked to detonate
 C_LINES		equ 23		;zero based (24 together)
 C_TOP_LINE	equ 5		;top-left corner of playfield
 C_BOTTOM_LINE	equ C_LINES*32+5	;bottom-left corner of playfield
@@ -236,9 +239,10 @@ cloop	controls
 .proc	place_tile
 	draw_current_tile
 linesloop
-	check_lines
+	count_full_lines
 	lda bomb_buffer_index2
 	beq x1
+	animate_full_lines
 	copy_bomb_buffer
 	detonate_bombs
 	segmentation
@@ -268,7 +272,7 @@ ok	draw_current_tile
 	rts
 .endp
 	
-.proc	check_lines
+.proc	count_full_lines
 	mva #0 count
 	sta bomb_buffer_index2
 	
@@ -282,14 +286,74 @@ x3	iny
 	cpy #16
 	bne x1
 	inc count
-	addbombs	
+	addbombs
+	ldy count
+	dey
+	txa
+	sta flbuffer,y	;store which line is full to buffer	
 nextline	dex
 	dex
 	cpx #4
 	bne x2
 	rts
 count	dta 0
-.endp	
+flbuffer		;buffer of lines indexes
+:C_LINES	dta 0
+.endp
+
+.proc	animate_full_lines
+	mva #$ff first_full_line
+	mva #0 counter
+	lda count_full_lines.count
+	beq x0
+	tay
+	dey
+	copy_vram
+x1	lda count_full_lines.flbuffer,y
+	tax
+	mwa lines,x w1
+	sty tmpy
+	
+	;fill full line with the fullline chars
+	ldy #16
+x2	lda (w1),y
+	cmp #C_CHARBRICK
+	bne @+
+	mva #C_CHARFULLLINE (w1),y
+@	cmp #C_CHARBOMBMARK
+	bne @+
+	mva #C_CHARFULLLINEBMB (w1),y
+@	dey
+	cpy #5
+	bpl x2
+	inc counter
+	lda first_full_line
+	bmi @+
+	ldy #9
+	mva #C_CHARFULLLINE (w2),y	;remove old number
+	
+@	mwa lines,x w2
+	inc first_full_line
+	lda counter
+	ora #$90	;make it number
+	ldy #9
+	sta (w2),y	;write number of full lines on top line to the left
+
+	pause 5
+
+	ldy tmpy
+	dey
+	bpl x1
+	
+	pause 30
+	copy_vram2
+x0	rts
+
+tmpy		dta 0
+first_full_line	dta 0
+counter		dta 0
+
+.endp
 
 ;adds bombs in the current line to bomb buffer
 .proc	addbombs	
@@ -305,7 +369,7 @@ x3	dey
 	ldx ztmp
 	rts
 
-x1	mva #C_CHARDETONATION (w1),y	;mark bomb that is detonating
+x1	mva #C_CHARBOMBMARK (w1),y	;mark bomb that is detonating
 	add_bomb_to_buffer
 	jmp x3	
 	
@@ -348,7 +412,7 @@ bomb_buffer_index2	dta 0
 ;and detonate after clear
 	ldy bomb_buffer_index
 	jeq x0	;nothing to detonate
-	ldx check_lines.count ;size of detonation
+	ldx count_full_lines.count ;size of detonation
 	dex
 	mva blast_width,x wblast 
 	mva blast_height,x hblast
@@ -1554,6 +1618,15 @@ x3	inc gscore,x
 	rts
 .endp
 
+.proc	copy_vram2
+	ldx #0
+@
+:4	mva vram2+:1*$100,x vram+:1*$100,x
+	inx
+	bne @-
+	rts
+.endp
+
 ;flood fill
 .proc	segmentation
 	copy_vram
@@ -1886,7 +1959,7 @@ x1	sta (w1),y
 .proc	next_stage
 	lda stageno
 	cmp #14
-	beq winner
+	beq w	inner
 	mva #":" fill_playfield.character
 	fill_playfield
 	inc_stage
