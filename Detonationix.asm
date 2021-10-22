@@ -82,6 +82,8 @@ C_CHARGROUNDED	equ $ff
 C_CHARFULLLINE	equ $f6
 C_CHARFULLLINEBMB	equ $77
 C_CHARBOMBMARK	equ $78	;bomb marked to detonate
+C_CHARMEGA	equ $5c
+C_CHARMEGAMARK	equ $58
 C_LINES		equ 23		;zero based (24 together)
 C_TOP_LINE	equ 5		;top-left corner of playfield
 C_BOTTOM_LINE	equ C_LINES*32+5	;bottom-left corner of playfield
@@ -324,6 +326,9 @@ x2	lda (w1),y
 @	cmp #C_CHARBOMBMARK
 	bne @+
 	mva #C_CHARFULLLINEBMB (w1),y
+@	a_out #C_CHARMEGA #C_CHARMEGA+3 @+
+	and #$ff-$04
+	sta (w1),y
 @	dey
 	cpy #5
 	bpl x2
@@ -363,6 +368,8 @@ counter		dta 0
 x2	lda (w1),y
 	cmp #C_CHARBOMB
 	beq x1
+	cmp #C_CHARMEGA
+	beq x4
 x3	dey
 	cpy #4
 	bne x2
@@ -371,7 +378,17 @@ x3	dey
 	rts
 
 x1	mva #C_CHARBOMBMARK (w1),y	;mark bomb that is detonating
+	mva #$00 add_bomb_to_buffer.type ;normal bomb
+	mva #1 add_bomb_to_buffer.size
 	add_bomb_to_buffer
+	jmp x3
+	
+x4	mva #C_CHARMEGAMARK (w1),y
+	mva #$80 add_bomb_to_buffer.type ;mega bomb
+	mva #2 add_bomb_to_buffer.size
+	iny ;mega blast needs +1 because of even size
+	add_bomb_to_buffer
+	dey
 	jmp x3	
 	
 .endp
@@ -382,13 +399,19 @@ x1	mva #C_CHARBOMBMARK (w1),y	;mark bomb that is detonating
 	add w1
 	sta bomb_buffer+$100,x
 	lda #0	;TODO: use $80 for mega bomb
+type	equ *-1
 	adc w1+1
 	sta bomb_buffer+$100+1,x
-	mva #1 blast_size_buffer+$100,x	;set initial blast width to 1
+	lda #1
+size	equ *-1
+	sta blast_size_buffer+$100,x	;set initial blast width to 1
 	sta blast_size_buffer+$100+1,x	;set initial blast height to 1
 	inc bomb_buffer_index2
 	inc bomb_buffer_index2
 	rts
+;TODO: fix megabomb vertical size to 8
+;TODO: fix consequent blast of megabomb
+;TODO: fix/check if fulllines are drawn correctly on megabomb
 .endp
 
 ;copies buffer1 -> buffer2 and resets buffer1
@@ -429,7 +452,12 @@ loop	ldy bomb_buffer_iterator
 	dey
 	dey
 	sty bomb_buffer_iterator
-	mwa bomb_buffer,y w1
+	mva bomb_buffer,y w1
+	lda bomb_buffer+1,y
+	bpl @+
+	jsr megabomb
+	jmp megabomb_continue
+@	sta w1+1
 	
 	lda blast_size_buffer,y
 	a_ge wblast loop	;width is dominant so if blast width == wblast
@@ -446,22 +474,11 @@ loop	ldy bomb_buffer_iterator
 	sta blast_size_buffer+1,y
 	inc change
 
+megabomb_continue
 @	lda blast_size_buffer,y
 	tax
 	lda blast_size_buffer+1,y
 	tay
-
-	/*
-	ldy #0
-	mva #C_CHAREMPTY (w1),y ;unmark detonating bomb (to not add it again during blast propagation)
-	;trigger_push_release ;debug
-	sub16 xblast w1	;left edge
-	sub16 ylinesup w1	;top-left edge
-	
-	draw_detonation
-	*/
-	;ldx wblast
-	;ldy hblast
 	draw_blast
 	jmp loop
 
@@ -490,7 +507,7 @@ x00	pause 1
 	add16 #64+5 w1
 	add16 #64+5 w2
 	
-clear_loop
+clear_loop	;clear playfield after detonations
 	ldy #31
 @	mva (w2),y (w1),y
 	dey
@@ -502,6 +519,7 @@ clear_loop
 	beq @+
 	cmp #C_CHARBRICK
 	beq @+
+	a_in #C_CHARMEGA #C_CHARMEGA+3 @+
 	mva #C_CHAREMPTY (w1),y
 @	dey
 	bpl @-1
@@ -524,6 +542,28 @@ clear_loop
 	mva #0 consequent_detonation	;set flag for +1 detonation size in next loops
 x0	rts
 
+;code fork for megabomb that has 10x8 blast
+megabomb
+	and #$7f	;remove $80 megabomb flag
+	sta w1+1
+	
+	lda blast_size_buffer,y
+	a_ge #10 x0	;width is dominant so if blast width == 10 (megablast)
+			;then it is final for this one
+	;grow blast width
+	add #2
+	sta blast_size_buffer,y
+	inc change
+			
+@	lda blast_size_buffer+1,y
+	a_ge #8 x0
+	;grow blast height
+	add #2
+	sta blast_size_buffer+1,y
+	inc change
+	rts
+	
+	
 ybt	dta 0,1,2,3
 xbt	dta 3,4,5,6
 ylines	dta 0,32,64,96
@@ -546,8 +586,57 @@ blast_height
 	dta 1,3,5,7,9,11,11,13,13
 :10	dta 15
 consequent_detonation	dta 1
-;TODO: megabomb
+.endp
 
+;check if megabomb should be formed and if so do it
+.proc	form_megabomb
+	mwa #vram+C_TOP_LINE w1
+	mva #C_LINES lines
+x2	ldy #0
+x1	lda (w1),y
+	iny
+	cmp #C_CHARBOMB
+	bne @+
+	jsr check2x2
+	ldy tmpy
+@	cpy #10
+	bne x1
+	add16 #32 w1
+	dec lines
+	bne x2
+x0	rts
+	
+check2x2	sty tmpy
+	lda (w1),y
+ 	cmp #C_CHARBOMB
+ 	bne x0
+	tya
+	add #32
+	tay
+	lda (w1),y
+ 	cmp #C_CHARBOMB
+ 	bne x0
+	dey
+	lda (w1),y
+ 	cmp #C_CHARBOMB
+ 	bne x0
+	;form it
+	mva #C_CHARMEGA+2 (w1),y
+	pause 5
+	iny
+	mva #C_CHARMEGA+3 (w1),y
+	pause 5
+	ldy tmpy
+	mva #C_CHARMEGA+1 (w1),y
+	pause 5
+	dey
+	mva #C_CHARMEGA (w1),y
+	pause 5
+	rts
+	
+	
+lines	dta 0
+tmpy	dta 0
 .endp
 
 .proc	draw_detonation
@@ -712,6 +801,7 @@ set_blast_line_type
 	jeq ok
 	dec ypos
 	place_tile
+	form_megabomb
 	count_if_more_than_10_blocks
 	beq x0
 	make_fullbomb
@@ -1432,7 +1522,7 @@ gamedl	dta $70,$70+$80
 	dta a(vramtop),$84
 	dta $44+$80
 gdvrptr	dta a(vram+64)
-:23	dta 4+$80
+:23	dta 2+$80
 	dta $41,a(gamedl)
 	
 titledl	
@@ -1634,7 +1724,6 @@ x3	inc gscore,x
 	;search for first filled byte
 x2	ldy #9
 x1	lda (w1),y
-	;a_ge #C_CHARBRICK found
 	cmp #C_CHARBRICK
 	beq found
 	cmp #C_CHARBOMB
@@ -1647,7 +1736,6 @@ x1	lda (w1),y
 	bne x2
 	
 	;wait_for_start ;debug
-	;done
 	rts
 	
 found	stx last_y
