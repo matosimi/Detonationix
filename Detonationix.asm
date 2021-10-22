@@ -378,27 +378,40 @@ x3	dey
 	rts
 
 x1	mva #C_CHARBOMBMARK (w1),y	;mark bomb that is detonating
-	mva #$00 add_bomb_to_buffer.type ;normal bomb
-	mva #1 add_bomb_to_buffer.size
-	add_bomb_to_buffer
+\	add_bomb_to_buffer
 	jmp x3
 	
 x4	mva #C_CHARMEGAMARK (w1),y
-	mva #$80 add_bomb_to_buffer.type ;mega bomb
-	mva #2 add_bomb_to_buffer.size
-	iny ;mega blast needs +1 because of even size
-	add_bomb_to_buffer
+	add_megabomb_to_buffer
 	dey
 	jmp x3	
 	
 .endp
 
+;mega bomb
+.proc	add_megabomb_to_buffer
+	mva #$80 add_some_bomb_to_buffer.type 
+	mva #2 add_some_bomb_to_buffer.size
+	iny ;mega blast needs +1 because of even size
+	add_some_bomb_to_buffer
+	rts
+.endp
+
+;normal bomb
 .proc	add_bomb_to_buffer
+	mva #$00 add_some_bomb_to_buffer.type 
+	mva #1 add_some_bomb_to_buffer.size
+	add_some_bomb_to_buffer 
+	rts
+.endp
+
+;generic type
+.proc	add_some_bomb_to_buffer
 	ldx bomb_buffer_index2
 	tya
 	add w1
 	sta bomb_buffer+$100,x
-	lda #0	;TODO: use $80 for mega bomb
+	lda #0	
 type	equ *-1
 	adc w1+1
 	sta bomb_buffer+$100+1,x
@@ -409,7 +422,6 @@ size	equ *-1
 	inc bomb_buffer_index2
 	inc bomb_buffer_index2
 	rts
-;TODO: fix megabomb vertical size to 8
 ;TODO: fix consequent blast of megabomb
 ;TODO: fix/check if fulllines are drawn correctly on megabomb
 .endp
@@ -716,8 +728,13 @@ x1	ldx #$47
 	jsr draw_blast_line
 	
 	;top part of blast is drawn, now to the bottom
+x00
+	lda width	;if width is even=>megabomb vertical blastsize fix 
+	and #$01
+	bne @+
+	inc suby ;test
 	
-x00	ldx #$4a	;set middle line type again
+@	ldx #$4a	;set middle line type again
 	jsr set_blast_line_type
 	mwa w1tmp w1
 	mva #1 repeat
@@ -1522,7 +1539,7 @@ gamedl	dta $70,$70+$80
 	dta a(vramtop),$84
 	dta $44+$80
 gdvrptr	dta a(vram+64)
-:23	dta 2+$80
+:23	dta 4+$80
 	dta $41,a(gamedl)
 	
 titledl	
