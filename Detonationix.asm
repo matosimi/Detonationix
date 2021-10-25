@@ -380,15 +380,25 @@ x1	mva #C_CHARBOMBMARK (w1),y	;mark bomb that is detonating
 	add_bomb_to_buffer
 	jmp x3
 	
-megabomb	;determine top left char position of megabomb
-	sty ytmp
-	sub #C_CHARMEGA
+megabomb	mark_megabomb	
+	jmp x3	
+
+.endp
+
+;marks megabomb and adds to buffer
+.proc	mark_megabomb	;determine top left char position of megabomb
 	mwx w1 w1tmp
+	sty ytmp
+	sta atmp
+	sub #C_CHARMEGA
 	a_lt #2 @+	;bottom line
 	sub16 #32 w1
-@	dey	;searches from right to left, so it always catches right chars of a megabomb
+@	lda atmp ;fix for blast (searching from left to right)
+	and #$01
+	beq @+
+	dey	;line is searched from right to left, so it always catches right chars of a megabomb
 	;(w1),y contains top left char pos.
-	add_megabomb_to_buffer
+@	add_megabomb_to_buffer
 	
 	mva #C_CHARMEGAMARK (w1),y
 	iny
@@ -398,14 +408,13 @@ megabomb	;determine top left char position of megabomb
 	tay
 	mva #C_CHARMEGAMARK+2 (w1),y
 	iny
-	mva #C_CHARMEGAMARK+3 (w1),y
-	
+	mva #C_CHARMEGAMARK+3 (w1),y	
 	mwa w1tmp w1
 	ldy ytmp	
-	jmp x3	
-
+	rts
 w1tmp	dta 0,0
 ytmp	dta 0
+atmp	dta 0
 .endp
 
 ;mega bomb
@@ -443,7 +452,6 @@ size	equ *-1
 	inc bomb_buffer_index2
 	inc bomb_buffer_index2
 	rts
-;TODO: fix consequent blast of megabomb
 ;TODO: fix/check if fulllines are drawn correctly on megabomb
 ;TODO: fix - new tile shows at the top just before next stage animation
 ;TODO: fix some strange newtile behavior like the tile is falling in next area
@@ -550,12 +558,18 @@ clear_loop	;clear playfield after detonations
 	bne @-
 	
 @	lda (w1),y
-	cmp #C_CHARBOMB
+	/*cmp #C_CHARBOMB
 	beq @+
 	cmp #C_CHARBRICK
 	beq @+
-	a_in #C_CHARMEGA #C_CHARMEGA+3 @+
-	mva #C_CHAREMPTY (w1),y
+	cmp #C_CHARBOMBMARK
+	beq @+
+	a_in #C_CHARMEGAMARK #C_CHARMEGAMARK+3 @+
+	a_in #C_CHARMEGA #C_CHARMEGA+3 @+ */
+	a_in #$40 #$42 clear	;flat blast chars
+	a_in #$47 #$4f clear	;rectangular blast chars
+	jmp @+
+clear	mva #C_CHAREMPTY (w1),y
 @	dey
 	bpl @-1
 	add16 #32 w1
@@ -755,7 +769,7 @@ x00
 	lda width	;if width is even=>megabomb vertical blastsize fix 
 	and #$01
 	bne @+
-	inc suby ;test
+	inc suby ;megabomb blastsize fix
 	
 @	ldx #$4a	;set middle line type again
 	jsr set_blast_line_type
@@ -789,26 +803,35 @@ draw_blast_line
 	cmp #C_CHARBOMB
 	bne @+
 	add_bomb_to_buffer
+	jmp @+1
+@	a_out #C_CHARMEGA #C_CHARMEGA+3 @+
+	mark_megabomb
 @	lda #$42 ;right piece
 ptr3	equ *-1
 	sta (w1),y 
 	
 	dey
-@	lda (w1),y
+midloop	lda (w1),y
 	cmp #C_CHARBOMB
 	bne @+
 	add_bomb_to_buffer
+	jmp @+1
+@	a_out #C_CHARMEGA #C_CHARMEGA+3 @+
+	mark_megabomb
 @	lda #$41 ;middle piece
 ptr2	equ *-1
 	sta (w1),y
 
 	dey
-	bne @-1
+	bne midloop
 	
 	lda (w1),y
 	cmp #C_CHARBOMB
 	bne @+
 	add_bomb_to_buffer
+	jmp @+1
+@	a_out #C_CHARMEGA #C_CHARMEGA+3 @+
+	mark_megabomb
 @	lda #$40 ;left piece
 ptr1	equ *-1
 	sta (w1),y 
