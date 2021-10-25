@@ -83,7 +83,7 @@ C_CHARFULLLINE	equ $f6
 C_CHARFULLLINEBMB	equ $77
 C_CHARBOMBMARK	equ $78	;bomb marked to detonate
 C_CHARMEGA	equ $5c
-C_CHARMEGAMARK	equ $58
+C_CHARMEGAMARK	equ $54
 C_LINES		equ 23		;zero based (24 together)
 C_TOP_LINE	equ 5		;top-left corner of playfield
 C_BOTTOM_LINE	equ C_LINES*32+5	;bottom-left corner of playfield
@@ -368,8 +368,7 @@ counter		dta 0
 x2	lda (w1),y
 	cmp #C_CHARBOMB
 	beq x1
-	cmp #C_CHARMEGA
-	beq x4
+	a_in #C_CHARMEGA #C_CHARMEGA+3 megabomb
 x3	dey
 	cpy #4
 	bne x2
@@ -378,14 +377,35 @@ x3	dey
 	rts
 
 x1	mva #C_CHARBOMBMARK (w1),y	;mark bomb that is detonating
-\	add_bomb_to_buffer
+	add_bomb_to_buffer
 	jmp x3
 	
-x4	mva #C_CHARMEGAMARK (w1),y
+megabomb	;determine top left char position of megabomb
+	sty ytmp
+	sub #C_CHARMEGA
+	mwx w1 w1tmp
+	a_lt #2 @+	;bottom line
+	sub16 #32 w1
+@	dey	;searches from right to left, so it always catches right chars of a megabomb
+	;(w1),y contains top left char pos.
 	add_megabomb_to_buffer
-	dey
-	jmp x3	
 	
+	mva #C_CHARMEGAMARK (w1),y
+	iny
+	mva #C_CHARMEGAMARK+1 (w1),y
+	tya
+	add #31
+	tay
+	mva #C_CHARMEGAMARK+2 (w1),y
+	iny
+	mva #C_CHARMEGAMARK+3 (w1),y
+	
+	mwa w1tmp w1
+	ldy ytmp	
+	jmp x3	
+
+w1tmp	dta 0,0
+ytmp	dta 0
 .endp
 
 ;mega bomb
@@ -394,6 +414,7 @@ x4	mva #C_CHARMEGAMARK (w1),y
 	mva #2 add_some_bomb_to_buffer.size
 	iny ;mega blast needs +1 because of even size
 	add_some_bomb_to_buffer
+	dey
 	rts
 .endp
 
@@ -424,6 +445,8 @@ size	equ *-1
 	rts
 ;TODO: fix consequent blast of megabomb
 ;TODO: fix/check if fulllines are drawn correctly on megabomb
+;TODO: fix - new tile shows at the top just before next stage animation
+;TODO: fix some strange newtile behavior like the tile is falling in next area
 .endp
 
 ;copies buffer1 -> buffer2 and resets buffer1
