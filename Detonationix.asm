@@ -83,6 +83,7 @@ C_CHARFULLLINE	equ $f6
 C_CHARFULLLINEBMB	equ $77
 C_CHARBOMBMARK	equ $78	;bomb marked to detonate
 C_CHARMEGA	equ $5c
+C_CHARFULLINEMEGA	equ $58
 C_CHARMEGAMARK	equ $54
 C_LINES		equ 23		;zero based (24 together)
 C_TOP_LINE	equ 5		;top-left corner of playfield
@@ -308,7 +309,7 @@ flbuffer		;buffer of lines indexes
 	mva #$ff first_full_line
 	mva #0 counter
 	lda count_full_lines.count
-	beq x0
+	jeq x0
 	tay
 	dey
 	copy_vram
@@ -326,8 +327,8 @@ x2	lda (w1),y
 @	cmp #C_CHARBOMBMARK
 	bne @+
 	mva #C_CHARFULLLINEBMB (w1),y
-@	a_out #C_CHARMEGA #C_CHARMEGA+3 @+
-	and #$ff-$04
+@	a_out #C_CHARMEGAMARK #C_CHARMEGAMARK+3 @+
+	add #$04
 	sta (w1),y
 @	dey
 	cpy #5
@@ -336,13 +337,16 @@ x2	lda (w1),y
 	lda first_full_line
 	bmi @+
 	ldy #9
-	mva #C_CHARFULLLINE (w2),y	;remove old number
+	mva undernumber (w2),y	;remove old number
 	
-@	mwa lines,x w2
-	inc first_full_line
-	lda counter
-	ora #$90	;make it number
+@	lda first_full_line
+	bpl @+
+	mwa lines,x w2
+@	inc first_full_line
 	ldy #9
+	mva (w2),y undernumber
+	lda counter
+	ora #$10	;make it number
 	sta (w2),y	;write number of full lines on top line to the left
 
 	pause 5
@@ -358,6 +362,7 @@ x0	rts
 tmpy		dta 0
 first_full_line	dta 0
 counter		dta 0
+undernumber	dta 0
 
 .endp
 
@@ -452,7 +457,6 @@ size	equ *-1
 	inc bomb_buffer_index2
 	inc bomb_buffer_index2
 	rts
-;TODO: fix/check if fulllines are drawn correctly on megabomb
 ;TODO: fix - new tile shows at the top just before next stage animation
 ;TODO: fix some strange newtile behavior like the tile is falling in next area
 .endp

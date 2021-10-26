@@ -1,21 +1,24 @@
 ; ********* MATOSIMI MACROS **********
 ; 24.08.2020
-	 
+; 26.10.2021 - (corrected/fixed) a_out macro with < > interval
+;	   - replaced named labels with underscored
+
+;add 8bit number to 16bit number
 .macro	add16 ' '
 	lda :1
 	add :2
-	bcc _x1
+	bcc _
 	inc :2+1
-_x1	sta :2
+_	sta :2
 .endm
 
 	 
 .macro	sub16 ' '
 	lda :2
 	sub :1
-	bcs ____x1
+	bcs _
 	dec :2+1
-____x1	sta :2
+_	sta :2
 .endm
 
 ;add two 16bit numbers, store result in latter
@@ -42,27 +45,27 @@ ____x1	sta :2
 ;adds (or subs) constant -128 to 127
 .macro	add16sign ' '
 	lda :1
-	bmi x2
+	bmi __
 	add :2
-	bcc x1
+	bcc _
 	inc :2+1
-	jmp x1
+	jmp _
 
-x2	;eor #$ff ;inverse (to get positive value)
+__	;eor #$ff ;inverse (to get positive value)
 
 	add :2
-	bcs x1
+	bcs _
 	dec :2+1
-x1	sta :2
+_	sta :2
 .endm
 
 .macro	cmp16
 	lda :1+1
 	cmp :2+1
-	bne x1
+	bne _
 	lda :1
 	cmp :2
-x1
+_
 .endm
 
 .macro	x_lt
@@ -85,37 +88,38 @@ x1
 	jcs :2
 .endm
 
-;check if A stands out of interval
+;check if A stands out of interval < >
 .macro	a_out ' '
 	a_lt :1 :3
-	a_ge :2 :3
+	cmp :2
+	beq _
+	jcs :3
+_
+.endm
+
+;checks if A stands inside interval < >
+.macro	a_in ' '
+	a_lt :1 _
+	a_lt :2 :3
+	jeq :3
+_
 .endm
 
 ;compares A with operand and returnes lower value of those two in A
 .macro	a_min ' '
-	a_ge :1 _______x0
-	jmp _______x1
-_______x0	lda :1
-_______x1		
+	a_ge :1 _
+	bcc __ ;jmp __
+_	lda :1
+__	
 .endm
 
 ;compares A with operand and returns higher value of those two in A
 .macro	a_max ' '
-	a_lt :1 _______x0
-	jmp _______x1
-_______x0	lda :1
-_______x1	
+	a_lt :1 _
+	bcs __ ;jmp __
+_	lda :1
+__	
 .endm
-
-;ckeckuje if A stands inside interval < >
-.macro	a_in ' '
-	a_ge :1 _______x0
-	jmp _______x1
-_______x0	cmp :2
-	jeq :3
-	a_lt :2 :3
-_______x1
-.endm	
 
 .macro	a_lt ' '
 	cmp :1
@@ -158,7 +162,7 @@ _______x1
 ;fill with specified value :2 until address :1 + optional suppress print if :3 == 0
 .macro fill_until ' '
 	ift :3 != 0
-	.print "fill ",": ",*,"-",:1," (",:1-*,")" 
+	.print "fill ",": ",*,"-",:1-1," (",:1-*-1,")" 
 	eif
 	.rept :1-*
 	dta :2
