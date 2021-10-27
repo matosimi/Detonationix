@@ -188,6 +188,7 @@ title	info
 ;	next_tile
 	
 	reset_score
+	form_megabomb
 	
 	mva #0 gover
 	sta gwin
@@ -327,7 +328,7 @@ x2	lda (w1),y
 @	cmp #C_CHARBOMBMARK
 	bne @+
 	mva #C_CHARFULLLINEBMB (w1),y
-@	a_out #C_CHARMEGAMARK #C_CHARMEGAMARK+3 @+
+@	a_out2 #C_CHARMEGAMARK #C_CHARMEGAMARK+3 @+
 	add #$04
 	sta (w1),y
 @	dey
@@ -458,7 +459,7 @@ size	equ *-1
 	inc bomb_buffer_index2
 	rts
 ;TODO: fix - new tile shows at the top just before next stage animation
-;TODO: fix some strange newtile behavior like the tile is falling in next area
+;TODO: fix some strange newtile behavior like the tile is falling on next stage in next area
 .endp
 
 ;copies buffer1 -> buffer2 and resets buffer1
@@ -808,7 +809,7 @@ draw_blast_line
 	bne @+
 	add_bomb_to_buffer
 	jmp @+1
-@	a_out #C_CHARMEGA #C_CHARMEGA+3 @+
+@	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
 @	lda #$42 ;right piece
 ptr3	equ *-1
@@ -820,7 +821,7 @@ midloop	lda (w1),y
 	bne @+
 	add_bomb_to_buffer
 	jmp @+1
-@	a_out #C_CHARMEGA #C_CHARMEGA+3 @+
+@	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
 @	lda #$41 ;middle piece
 ptr2	equ *-1
@@ -834,7 +835,7 @@ ptr2	equ *-1
 	bne @+
 	add_bomb_to_buffer
 	jmp @+1
-@	a_out #C_CHARMEGA #C_CHARMEGA+3 @+
+@	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
 @	lda #$40 ;left piece
 ptr1	equ *-1
@@ -957,6 +958,21 @@ err	draw_current_tile
 handled	dta 0
 
 .endp	
+
+.proc	init_next_tile_buffer
+	
+	rts
+.endp
+
+.local	next_tile_buffer
+tile_type
+:6	dta 0
+hflip	
+:6	dta 0
+index	dta 0
+.endl
+
+
 	
 .proc	next_tile
 	clear_next_window
@@ -985,9 +1001,9 @@ x1	lda random
 	
 	prepare_tile
 		
-	mva #22 xpos
-	mva #6 ypos
-	draw_current_tile
+	;mva #22 xpos
+	;mva #6 ypos
+	;draw_current_tile
 	mva #0 gcounter
 	rts
 
@@ -2109,7 +2125,7 @@ x1	sta (w1),y
 .proc	next_stage
 	lda stageno
 	cmp #14
-	beq w	inner
+	beq winner
 	mva #":" fill_playfield.character
 	fill_playfield
 	inc_stage
@@ -2121,7 +2137,9 @@ x1	sta (w1),y
 	lda #40		;lowest game speed
 	sub stageno	;sub stage number
 	sta gravtick 	;speed up game every stage
-	next_tile		;do not continue with tile from previous stage
+	mva #-1 next_tile.fullbomb_counter
+	prepare_tile
+	form_megabomb
 	rts
 winner
 	mva #C_CHARDETONATION fill_playfield.character
