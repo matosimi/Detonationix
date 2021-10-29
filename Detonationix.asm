@@ -184,9 +184,8 @@ title	info
 	reset_score
 	reset_gscore
 	
-	next_tile
-;	next_tile
-	
+	init_tile_buffer
+		
 	reset_score
 	form_megabomb
 	
@@ -195,17 +194,13 @@ title	info
 	sta gcounter
 	sta ccounter
 	
-	mva #16 next_tile.fullbomb_counter
-
 	mva #5 speed	;controls responsiveness
 	sta leveldone
 	mva #40 gravtick	;gravity speed
-	;init new tile
 	
 	mva #4+4 xpos
 	mva #0 ypos 
-	;mva ctype tile.type
-	;mva cbomb next_tile.bomb
+
 	ift debug_tiledemo==1
 	tiledemo
 	eif
@@ -240,6 +235,65 @@ cloop	controls
 	jmp loop
 .endl
 
+;todo: show next tile before new stage is being shown
+.proc	animate_next_tile
+	clear_next_window
+	copy_vram
+	mva #0 step
+	sta step2
+	mva #1 save.clip
+	sta save.delete
+	
+	ldx tile.top_index
+	lda tile.next,x
+	
+	load_tile_to_current
+	ldx step
+@	mva xpath,x xpos
+	mva ypath,x ypos
+	dec save.delete
+	draw_current_tile
+	pause 1
+	inc save.delete
+	draw_current_tile
+	inc step
+	ldx step
+	cpx #C_LENGTH
+	bne @-
+	
+	;2nd animation
+	mva #22 xpos
+	ldx tile.top_index
+	lda tile.next,x
+	tax
+	lda tile.next,x
+	load_tile_to_current
+	ldx step2
+@	mva ypath2,x ypos
+	dec save.delete
+	draw_current_tile
+	pause 1
+	inc save.delete
+	draw_current_tile
+	inc step2
+	ldx step2
+	cpx #C_LENGTH2
+	bne @-
+	
+	
+	mva #0 save.clip
+	sta save.delete
+	rts
+;(22,6) -> (8,0)
+step	dta 0
+xpath	dta 21,20,19,18,17,16,15,14,13,12,11,10,9,8
+ypath	dta  6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 0,0,0
+C_LENGTH	equ ypath-xpath
+step2	dta 0
+ypath2	dta 9,8,7,6
+C_LENGTH2	equ 4
+.endp
+
 .proc	place_tile
 	draw_current_tile
 	mva #1 detonate_bombs.consequent_detonation	;set to 1st run
@@ -264,17 +318,14 @@ gravloop
 	
 
 	
-x1	next_tile
-@	mva #4+4 xpos
-	mva #0 ypos
-	;mva ctype tile.type
-	;mva cbomb next_tile.bomb
-	mva #0 controls.handled
+x1	lda leveldone
+	beq x0
+	next_tile
 	validate_tile
 	jeq ok
 	mva #1 gover ;game over
 ok	draw_current_tile
-	rts
+x0	rts
 .endp
 	
 .proc	count_full_lines
@@ -959,57 +1010,41 @@ handled	dta 0
 
 .endp	
 
-.proc	init_next_tile_buffer
-	
+;fills buffer with tiles
+.proc	init_tile_buffer
+	mva #6 repeat
+	mva #-1 tile.fullbomb_counter
+@	add_new_tile_to_buffer
+	dec repeat
+	bpl @-
 	rts
+repeat	dta 6
 .endp
 
-.local	next_tile_buffer
-tile_type
-:6	dta 0
-hflip	
-:6	dta 0
-index	dta 0
-.endl
-
-
-	
 .proc	next_tile
 	clear_next_window
 	dec_score
+	animate_next_tile
+	add_new_tile_to_buffer
+	;load tile from buffer top+1
+	ldx tile.top_index
+	lda tile.next,x	
+	load_tile_to_current
 	
-	dec fullbomb_counter
-	bpl x2
+	;draw it in next area
+	mva #22 xpos
+	mva #6 ypos
+	draw_current_tile
 	
-	ldx #8	;fullbomb every 8 tiles (stage 4->x)
-	lda stage
-	a_ge #4 @+
-	ldx #16
-@	stx fullbomb_counter
-		
-x2	;mva tile.type ctype
-	;mva hflip chflip
-	;mva bomb cbomb
-x1	lda random
-	and #$07
-	;a_ge #8 x1
-	sta tile.type
-	lda random
-	and #$08
-	sta hflip
-	sta prepare_tile.hflip
+	;load tile from buffer top
+	lda tile.top_index
+	load_tile_to_current
 	
-	prepare_tile
-		
-	;mva #22 xpos
-	;mva #6 ypos
-	;draw_current_tile
+	mva #4+4 xpos
+	mva #0 ypos
+	mva #0 controls.handled
 	mva #0 gcounter
 	rts
-
-hflip	dta 0
-bomb	dta 0
-fullbomb_counter	dta 0
 .endp
 
 .proc	make_fullbomb
@@ -1088,21 +1123,21 @@ x1	mva (w1),y (w2),y
 	bpl x2
 	rts
 	
-stats	dta d'yqqqqqqz'*
-	dta d'p NEXT p'*
-:6	dta d'p      p'*
-	dta d'rqqqqqqs'*
-	dta d'yqqqqqqz'*
-	dta d'pSCORE p'*
-	dta d'p      p'*
-	dta d'p      p'*
-	dta d'pSTAGE p'*
-	dta d'p      p'*
-	dta d'p      p'*
-	dta d'pGRAND p'*
-	dta d'pSCORE p'*
-	dta d'p      p'*
-	dta d'rqqqqqqs'*
+stats	dta d'yqqqqqqz'
+	dta d'p NEXT p'
+:6	dta d'p      p'
+	dta d'rqqqqqqs'
+	dta d'yqqqqqqz'
+	dta d'pSCORE p'
+	dta d'p      p'
+	dta d'p      p'
+	dta d'pSTAGE p'
+	dta d'p      p'
+	dta d'p      p'
+	dta d'pGRAND p'
+	dta d'pSCORE p'
+	dta d'p      p'
+	dta d'rqqqqqqs'
 .endp
 	
 .proc	draw_playfield
@@ -1129,7 +1164,6 @@ x1	mva (w1),y (w2),y
 	mva #1 load_stage.noanim
 	load_stage
 	mva #0 load_stage.noanim
-
 	rts
 .endp
 
@@ -1191,7 +1225,7 @@ store
 	dey
 	bpl @-
 	
-	lda next_tile.fullbomb_counter
+	lda tile.fullbomb_counter
 	beq @+
 	add_bomb_to_tile
 @
@@ -1203,7 +1237,7 @@ x1	lda current,y
 @	dey
 	bpl x1
 	
-	lda next_tile.fullbomb_counter
+	lda tile.fullbomb_counter
 	bne x2
 	
 	;full bomb
@@ -1423,6 +1457,8 @@ draw2
 	cmp #C_CHAREMPTY
 	beq x0	;draw only those that are not empty
 	sta ztmp
+	lda clip
+	bne x5	;clipping branch
 	lda delete
 	beq x1
 	;delete branch
@@ -1444,25 +1480,130 @@ ptr1	equ *-2
 x0	rts
 x4	inc valid
 	rts
+;clipping branch	
+x5	lda delete
+	bne x6 ;delete clip branch
+	mwa ptr1 ptr3
+	lda $ffff,x
+ptr3	equ *-2
+	cmp #C_CHAREMPTY
+	beq x3
+	rts
+;delete clip branch - needs vram copy!!!	
+x6	mva ptr1 ptr4
+	lda ptr1+1
+	add #>vram2->vram
+	sta ptr4+1	;vram2 address
+	lda $ffff,x
+ptr4	equ *-2
+	jmp x2
 	
 delete	dta 0	;1 = delete tile
 validate	dta 0	;1 = validate tile
 valid	dta 0	;>0 - invalid
+clip	dta 0	;1 = use clipping (draw only on empty chars)
 .endp
 
+.proc	add_new_tile_to_buffer	
+	dec tile.fullbomb_counter
+	bpl x2
 	
+	ldx #8	;fullbomb every 8 tiles (stage 4->x)
+	lda stage
+	a_ge #4 @+
+	ldx #16
+@	stx tile.fullbomb_counter
+		
+x2	
+@	lda random
+	and #$0f ;no more than 16 types possible
+	a_ge tile.maxtype @-
+	sta tile.type
+	lda random
+	and #$08
+	sta prepare_tile.hflip
+	prepare_tile	;prepares tile to current
+	
+	add_current_to_tile_buffer_bottom
+	rts
+
+;moves buffer pointers and adds current tile to the bottom of buffer
+.proc	add_current_to_tile_buffer_bottom
+	ldx tile.top_index
+	lda tile.next,x
+	sta tile.top_index
+	
+	ldx tile.bottom_index
+	lda tile.next,x
+	sta tile.bottom_index
+	tay
+	
+	;copy
+	ldx #24	;max tile size
+	lda tile.buffptr,y
+	tay
+@	mva current,x tile.buffer,y
+	dey
+	dex
+	bpl @-
+	
+	;store type of this tile
+	lda tile.type
+	ldy tile.bottom_index
+	sta tile.typebuff,y
+	rts
+.endp	
+.endp
+
+
+
+;A - index in the buffer
+.proc	load_tile_to_current
+	pha
+	ldx #24
+	tay
+	lda tile.buffptr,y
+	tay
+@	mva tile.buffer,y current,x
+	dey
+	dex
+	bpl @-
+	
+	;load type
+	pla
+	tay
+	lda tile.typebuff,y
+	sta tile.type
+	rts	
+.endp
 
 .local	tile
+C_BUFFSIZE	equ 6	;size of buffer
 addresses
-:8	dta a(tile:1)
-
-sizes	dta 3,3,3,3,2,2,2,4
-dsizes	dta 9,9,9,9,4,4,4,16
-type	dta 1
+:8		dta a(tile:1)
+sizes		dta 3,3,3,3,2,2,2,4
+dsizes		dta 9,9,9,9,4,4,4,16
+type		dta 1
+buffer
+:25*C_BUFFSIZE	dta " "
+typebuff	
+:C_BUFFSIZE	dta 1
+temp	
+:25		dta " "
+maxtype		dta 7
+top_index		dta 0
+bottom_index	dta C_BUFFSIZE-1
+fullbomb_counter	dta 0
+next	;next index - helps to cycle the buffer
+:C_BUFFSIZE-1	dta :1+1
+		dta 0
+buffptr
+:C_BUFFSIZE	dta 25*:1+24	;buffer pointer of endbyte of each tile
 .endl
 
 current	
-:16	dta " "
+:25	dta " "
+
 
 lines
 :25	dta a(vram+32*:1)
@@ -2128,17 +2269,18 @@ x1	sta (w1),y
 	beq winner
 	mva #":" fill_playfield.character
 	fill_playfield
+	clear_next_window
+	init_tile_buffer
 	inc_stage
 	add_gscore
 	reset_score
 	;mva #C_CHAREMPTY fill_playfield.character
 	;fill_playfield
 	load_stage
+	next_tile
 	lda #40		;lowest game speed
 	sub stageno	;sub stage number
 	sta gravtick 	;speed up game every stage
-	mva #-1 next_tile.fullbomb_counter
-	prepare_tile
 	form_megabomb
 	rts
 winner
