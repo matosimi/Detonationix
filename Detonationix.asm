@@ -2,9 +2,8 @@
 ;additional fixes to 29.8.2020
 ;bomb buffer fix (128->256 size) 31.8.2020
 ;TODO: check megabomb chain reaction showing some megabomb chars in weird places
-;TODO: fix some strange newtile behavior like the tile is falling on next stage in next area
-;TODO: fix - run form megabomb before next tile animation
-;TODO: fix nexttile animation for beginning of game/stage 
+;todo: start with score 100 (instead of 99)
+;todo: add scoring system for big detonations
 hposp0	equ $d000
 hposm0	equ $d004
 sizep0	equ $d008
@@ -180,29 +179,31 @@ title	info
 	
 	convert_tiles
 	
-	draw_playfield
 	draw_stats
+	draw_playfield
 	
 	reset_stage
 	reset_score
 	reset_gscore
-	
+	load_stage
 	init_tile_buffer
-		
-	reset_score
+	
+	jsr next_tile.first
 	form_megabomb
+	pause 10
+	next_tile
 	
 	mva #0 gover
 	sta gwin
-	sta gcounter
-	sta ccounter
+	;sta gcounter
+	;sta ccounter
 	
 	mva #5 speed	;controls responsiveness
 	sta leveldone
 	mva #40 gravtick	;gravity speed
 	
-	mva #4+4 xpos
-	mva #0 ypos 
+	;mva #4+4 xpos
+	;mva #0 ypos 
 
 	ift debug_tiledemo==1
 	tiledemo
@@ -251,7 +252,6 @@ cloop	controls
 	ldx step
 	mva xpath,x xpos
 	mva ypath,x ypos
-	
 	vcount_wait_for_0
 	;mva #$0f colpf0+4
 	draw_current_tile	;draw next tile
@@ -270,6 +270,7 @@ cloop	controls
 	draw_current_tile	;draw next-next tile
 	
 go_delete
+	;pause 5
 	wait_vcount_lt #$4d ;wait until below the half of PAL screen
 	;mva #$02 colpf0+4
 	ldx tile.top_index
@@ -335,6 +336,7 @@ gravloop
 	
 x1	lda leveldone
 	beq x0
+	form_megabomb
 	next_tile
 	validate_current_tile
 	jeq ok
@@ -933,7 +935,6 @@ set_blast_line_type
 	jeq ok
 	dec ypos
 	place_tile
-	form_megabomb
 	count_if_more_than_10_blocks
 	beq x0
 	make_fullbomb
@@ -1025,18 +1026,33 @@ handled	dta 0
 
 ;fills buffer with tiles
 .proc	init_tile_buffer
-	mva #6 repeat
+	mva #0 tile.top_index
+	mva #tile.C_BUFFSIZE-1 tile.bottom_index
+	mva #tile.C_BUFFSIZE-1 repeat
 	mva #-1 tile.fullbomb_counter
 @	add_new_tile_to_buffer
 	dec repeat
 	bpl @-
+	
+	ldx #1
+	lda tile.buffptr,x
+	tay
+	ldx #24
+	lda #0
+@	sta tile.buffer,y
+	dey
+	dex
+	bpl @-
+	
+	mva #0 tile.top_index
+	mva #tile.C_BUFFSIZE-1 tile.bottom_index
 	rts
 repeat	dta 6
 .endp
 
 .proc	next_tile
-	clear_next_window
 	dec_score
+first
 	animate_next_tile
 	add_new_tile_to_buffer
 	;load tile from buffer top+1
@@ -1045,18 +1061,20 @@ repeat	dta 6
 	load_tile_to_current
 	
 	;draw it in next area
-	mva #22 xpos
+/*	mva #22 xpos
 	mva #6 ypos
 	draw_current_tile
-	
+*/	
 	;load tile from buffer top
 	lda tile.top_index
 	load_tile_to_current
 	
 	mva #4+4 xpos
 	mva #0 ypos
-	mva #0 controls.handled
-	mva #0 gcounter
+	sta controls.handled
+	sta gcounter
+	sta ccounter
+	
 	rts
 .endp
 
@@ -1603,7 +1621,7 @@ typebuff
 :C_BUFFSIZE	dta 1
 temp	
 :25		dta " "
-maxtype		dta 7
+maxtype		dta 8	;maxtype+1
 top_index		dta 0
 bottom_index	dta C_BUFFSIZE-1
 fullbomb_counter	dta 0
@@ -2280,18 +2298,21 @@ x1	sta (w1),y
 	mva #":" fill_playfield.character
 	fill_playfield
 	clear_next_window
-	init_tile_buffer
 	inc_stage
 	add_gscore
 	reset_score
 	;mva #C_CHAREMPTY fill_playfield.character
 	;fill_playfield
 	load_stage
+	init_tile_buffer
+	jsr next_tile.first
+	form_megabomb
+	pause 10
 	next_tile
+	
 	lda #40		;lowest game speed
 	sub stageno	;sub stage number
 	sta gravtick 	;speed up game every stage
-	form_megabomb
 	rts
 winner
 	mva #C_CHARDETONATION fill_playfield.character
