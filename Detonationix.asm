@@ -1,7 +1,10 @@
 ;DETONATIONIX 25-26.8.2020 - Abbuc 2020
 ;additional fixes to 29.8.2020
 ;bomb buffer fix (128->256 size) 31.8.2020
-
+;TODO: check megabomb chain reaction showing some megabomb chars in weird places
+;TODO: fix some strange newtile behavior like the tile is falling on next stage in next area
+;TODO: fix - run form megabomb before next tile animation
+;TODO: fix nexttile animation for beginning of game/stage 
 hposp0	equ $d000
 hposm0	equ $d004
 sizep0	equ $d008
@@ -235,63 +238,75 @@ cloop	controls
 	jmp loop
 .endl
 
-;todo: show next tile before new stage is being shown
+
 .proc	animate_next_tile
 	clear_next_window
 	copy_vram
 	mva #0 step
-	sta step2
 	mva #1 save.clip
-	sta save.delete
 	
-	ldx tile.top_index
+@	ldx tile.top_index
 	lda tile.next,x
-	
 	load_tile_to_current
 	ldx step
-@	mva xpath,x xpos
+	mva xpath,x xpos
 	mva ypath,x ypos
-	dec save.delete
-	draw_current_tile
-	pause 1
-	inc save.delete
-	draw_current_tile
-	inc step
-	ldx step
-	cpx #C_LENGTH
-	bne @-
 	
-	;2nd animation
+	vcount_wait_for_0
+	;mva #$0f colpf0+4
+	draw_current_tile	;draw next tile
+	
+	ldx step
+	lda ypath2,x
+	bmi go_delete
+
+	sta ypos
 	mva #22 xpos
 	ldx tile.top_index
 	lda tile.next,x
 	tax
 	lda tile.next,x
 	load_tile_to_current
-	ldx step2
-@	mva ypath2,x ypos
-	dec save.delete
-	draw_current_tile
-	pause 1
-	inc save.delete
-	draw_current_tile
-	inc step2
-	ldx step2
-	cpx #C_LENGTH2
-	bne @-
+	draw_current_tile	;draw next-next tile
 	
+go_delete
+	wait_vcount_lt #$4d ;wait until below the half of PAL screen
+	;mva #$02 colpf0+4
+	ldx tile.top_index
+	lda tile.next,x
+	load_tile_to_current
+	ldx step
+	mva xpath,x xpos
+	mva ypath,x ypos
+	delete_current_tile	;delete next tile
+	
+	ldx step
+	lda ypath2+1,x	;skip delete if not drawn on next frame
+	bmi go_next_frame
+
+	mva ypath2,x ypos
+	mva #22 xpos
+	ldx tile.top_index
+	lda tile.next,x
+	tax
+	lda tile.next,x
+	load_tile_to_current
+	delete_current_tile	;delete next-next tile
+	
+go_next_frame	
+	inc step
+	ldx step
+	cpx #C_LENGTH
+	jne @-
 	
 	mva #0 save.clip
-	sta save.delete
 	rts
 ;(22,6) -> (8,0)
 step	dta 0
-xpath	dta 21,20,19,18,17,16,15,14,13,12,11,10,9,8
-ypath	dta  6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 0,0,0
+xpath	dta 21,20,19,18,17,16,15,14,13,12,11,10, 9, 8
+ypath	dta  6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 0, 0, 0
 C_LENGTH	equ ypath-xpath
-step2	dta 0
-ypath2	dta 9,8,7,6
-C_LENGTH2	equ 4
+ypath2	dta -1,-1,-1,-1, 9, 8, 7, 6,-1,-1,-1,-1,-1,-1,-1
 .endp
 
 .proc	place_tile
@@ -321,7 +336,7 @@ gravloop
 x1	lda leveldone
 	beq x0
 	next_tile
-	validate_tile
+	validate_current_tile
 	jeq ok
 	mva #1 gover ;game over
 ok	draw_current_tile
@@ -509,8 +524,6 @@ size	equ *-1
 	inc bomb_buffer_index2
 	inc bomb_buffer_index2
 	rts
-;TODO: fix - new tile shows at the top just before next stage animation
-;TODO: fix some strange newtile behavior like the tile is falling on next stage in next area
 .endp
 
 ;copies buffer1 -> buffer2 and resets buffer1
@@ -913,10 +926,10 @@ set_blast_line_type
 	a_lt gravtick x0
 	
 	pause 0	;removes flicker
-	delete_tile
+	delete_current_tile
 	mva #0 gcounter	;reset gravity counter
 	inc ypos
-	validate_tile
+	validate_current_tile
 	jeq ok
 	dec ypos
 	place_tile
@@ -955,24 +968,24 @@ x0	rts
 
 rotate_back
 	store_current
-	delete_tile
+	delete_current_tile
 :3	rotate_tile
-	validate_tile
+	validate_current_tile
 	jeq ok
 	restore_current
 	jmp err
 	
 up	store_current
-	delete_tile
+	delete_current_tile
 	rotate_tile
-	validate_tile
+	validate_current_tile
 	jeq ok
 	restore_current
 	jmp err
 	
-down	delete_tile
+down	delete_current_tile
 	inc ypos
-	validate_tile
+	validate_current_tile
 	jeq dgrav
 	dec ypos	;revert
 	jmp err
@@ -984,16 +997,16 @@ dgrav	mva #0 gcounter	;reset gravity when forced move down
 	mva #0 handled
 	rts
 	
-left	delete_tile
+left	delete_current_tile
 	dec xpos
-	validate_tile
+	validate_current_tile
 	jeq ok
 	inc xpos	;revert
 	jmp err
 	
-right	delete_tile
+right	delete_current_tile
 	inc xpos
-	validate_tile
+	validate_current_tile
 	jeq ok
 	dec xpos
 	jmp err
@@ -1167,7 +1180,7 @@ x1	mva (w1),y (w2),y
 	rts
 .endp
 
-.proc	delete_tile
+.proc	delete_current_tile
 	inc save.delete
 	draw_current_tile
 	dec save.delete
@@ -1175,7 +1188,7 @@ x1	mva (w1),y (w2),y
 .endp
 
 ;try drawing, if possible it is valid
-.proc	validate_tile
+.proc	validate_current_tile
 	inc save.validate
 	mva #0 save.valid	;reset validation result
 	draw_current_tile
@@ -1620,7 +1633,11 @@ gamedli	phr
 	rti
 
 gamevbi	phr
-	;inc 20 - moved to rmt.play
+	mva #$0f colpf0+4
+	sta wsync
+	inc 20
+	inc gcounter
+	inc ccounter
 	mva >gamefont chbase
 	mva #$ec colpf0
 	mva #$e4 colpf0+1
@@ -1631,13 +1648,6 @@ gamevbi	phr
 
 	ift debug_no_music == 0
 	rmt.play
-	inc 20
-	inc gcounter
-	inc ccounter
-	els
-	inc 20
-	inc gcounter
-	inc ccounter
 	eif
 	
 	
@@ -2501,5 +2511,33 @@ tp	dta 0
 .endp	
 	eif
 
-
 	run game
+
+.macro	vcount_wait_for_0
+	lda:rne vcount
+.endm
+
+.macro	wait_vcount_out ' '
+	lda vcount
+	a_out :1 :2 
+	a_lt :1 :3
+	cmp :2
+	beq _
+	jcs :3
+_
+.endm
+
+.macro	wait_vcount_lt ' '
+_	lda vcount
+	a_lt :1 _
+.endm
+
+.macro	wait_vcount_ge ' '
+_	lda vcount
+	a_ge :1 _
+.endm
+
+.macro	vcount_lt_a ' '
+	cmp vcount
+	jcc :1
+.endm
