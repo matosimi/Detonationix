@@ -2,8 +2,7 @@
 ;additional fixes to 29.8.2020
 ;bomb buffer fix (128->256 size) 31.8.2020
 ;TODO: check megabomb chain reaction showing some megabomb chars in weird places
-;todo: start with score 100 (instead of 99)
-;todo: add scoring system for big detonations
+
 hposp0	equ $d000
 hposm0	equ $d004
 sizep0	equ $d008
@@ -318,6 +317,7 @@ linesloop
 	lda bomb_buffer_index2
 	beq x1
 	animate_full_lines
+	add_score
 	copy_bomb_buffer
 	detonate_bombs
 	segmentation
@@ -454,7 +454,8 @@ x1	mva #C_CHARBOMBMARK (w1),y	;mark bomb that is detonating
 	add_bomb_to_buffer
 	jmp x3
 	
-megabomb	mark_megabomb	
+megabomb	mark_megabomb
+	add_score_megabomb	
 	jmp x3	
 
 .endp
@@ -620,6 +621,12 @@ x00	pause 1
 	
 	add16 #64+5 w1
 	add16 #64+5 w2
+
+;copy score from vram to vram2 (could be changed by megabomb detonations)
+	ldy #5
+@	mva score,y score_v2,y
+	dey
+	bpl @-
 	
 clear_loop	;clear playfield after detonations
 	ldy #31
@@ -877,6 +884,7 @@ draw_blast_line
 	jmp @+1
 @	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
+	add_score_megabomb
 @	lda #$42 ;right piece
 ptr3	equ *-1
 	sta (w1),y 
@@ -889,6 +897,7 @@ midloop	lda (w1),y
 	jmp @+1
 @	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
+	add_score_megabomb	
 @	lda #$41 ;middle piece
 ptr2	equ *-1
 	sta (w1),y
@@ -903,6 +912,7 @@ ptr2	equ *-1
 	jmp @+1
 @	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
+	add_score_megabomb
 @	lda #$40 ;left piece
 ptr1	equ *-1
 	sta (w1),y 
@@ -1842,11 +1852,13 @@ texts	dta "   CREATED BY MARTIN SIMECEK    "
 	dta "  ABBUC SOFTWARE CONTEST 2020   "
 
 score	equ vram+32*14+21 ;leftmost char
+score_v2	equ vram2+32*14+21 ;leftomost char score vram2
 gscore 	equ vram+32*21+21 ;leftmost char
 stage	equ vram+32*17+26 ;last char
 
 .proc	reset_score
-	mva #"9"* score+4
+	mva #"1"* score+3
+	mva #"0"* score+4
 	sta score+5
 	rts
 .endp
@@ -1878,8 +1890,105 @@ x1	mva #"0"* stage
 	rts
 .endp
 
+.macro	add_score_megabomb ;just +1
+	inc add_score.megabomb
+	add_score	
+.endm
+
+;uses A,X
+.proc	add_score
+	lda #0
+	ldx #5
+@	sta bonus,x
+	dex
+	bpl @-
+	
+	lda megabomb
+	beq @+
+	mva #1 bonus+5	;1 (for megabomb masked as -1)
+	mva #0 megabomb	;reset megabomb flag
+	jmp addition	
+@	lda count_full_lines.count
+	a_lt #3 x0	;0
+	cmp #3
+	bne @+
+	mva #2 bonus+5	;2
+	jmp addition
+@	cmp #4
+	bne @+
+	sta bonus+5	;4
+	jmp addition
+@	cmp #5
+	bne @+
+	mva #1 bonus+4 	;10
+	jmp addition
+@	cmp #6
+	bne @+
+	mva #4 bonus+4 	;40
+	jmp addition
+@	a_ge #15 @+
+	sub #6
+	sta bonus+3	;100 - 900
+	jmp addition
+@	mva #9 bonus+3	;999
+	sta bonus+4
+	sta bonus+5
+	jmp addition
+x0	rts
+
+addition
+	ldx #5
+@	lda bonus,x
+	add score,x
+	beq x0	;space+0 = done
+	a_ge #"0"* x1	;its a number+number
+	ora #$90		;make it number (it was space+number)
+x2	sta score,x
+	dex
+	bpl @- 
+	rts
+	
+x1	a_ge #"9"*+1 @+	;needs shifting
+	jmp x2
+@	inc score-1,x
+	sub #10
+	a_ge #"9"*+1 @-
+	jmp x2
+
+bonus	dta 0,0,0,0,0,0
+megabomb	dta 0
+.endp
+
 .proc	dec_score
 	ldx #5
+	
+@	lda score,x
+	cmp #"0"*
+	bne x1
+	dex
+	bpl @-
+	
+x1	cmp #0
+	beq gameover
+	dec score,x
+	lda score,x
+	cmp #"0"*
+	bne x2 ;fill with 9s to right
+	lda score-1,x
+	bne x0
+	sta score,x
+	jmp x2
+x0	rts
+
+x2	lda #"9"*
+@	inx
+	cpx #6
+	beq x0
+	sta score,x
+	bne @- ;jmp @-
+	dta 2	;cannot happen
+/*	
+	
 x2	dec score,x
 	lda score,x
 	a_lt #"0"* x1
@@ -1894,7 +2003,7 @@ x1	dex
 	dec gravtick
 	dec gravtick
 	jmp x2
-	
+*/	
 gameover	mva #"0"* score+1,x
 	mva #1 gover
 	rts	
