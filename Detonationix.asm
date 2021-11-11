@@ -1,7 +1,6 @@
 ;DETONATIONIX 25-26.8.2020 - Abbuc 2020
 ;additional fixes to 29.8.2020
 ;bomb buffer fix (128->256 size) 31.8.2020
-;TODO: check megabomb chain reaction showing some megabomb chars in weird places
 
 hposp0	equ $d000
 hposm0	equ $d004
@@ -356,7 +355,7 @@ x1	lda (w1),y
 	cmp #C_CHAREMPTY
 	beq nextline
 x3	iny
-	cpy #16
+	cpy #15
 	bne x1
 	inc count
 	addbombs
@@ -388,7 +387,7 @@ x1	lda count_full_lines.flbuffer,y
 	sty tmpy
 	
 	;fill full line with the fullline chars
-	ldy #16
+	ldy #14
 x2	lda (w1),y
 	cmp #C_CHARBRICK
 	bne @+
@@ -438,7 +437,7 @@ undernumber	dta 0
 ;adds bombs in the current line to bomb buffer
 .proc	addbombs	
 	stx ztmp
-	
+	dey
 x2	lda (w1),y
 	cmp #C_CHARBOMB
 	beq x1
@@ -471,7 +470,7 @@ megabomb	mark_megabomb
 @	lda atmp ;fix for blast (searching from left to right)
 	and #$01
 	beq @+
-	dey	;line is searched from right to left, so it always catches right chars of a megabomb
+	dew w1 ;dey ;when called from draw_blast y can be 0, hence dew w1	
 	;(w1),y contains top left char pos.
 @	add_megabomb_to_buffer
 	
