@@ -1,7 +1,7 @@
 ;DETONATIONIX 25-26.8.2020 - Abbuc 2020
 ;additional fixes to 29.8.2020
 ;bomb buffer fix (128->256 size) 31.8.2020
-
+;TODO: controls - add debounce
 hposp0	equ $d000
 hposm0	equ $d004
 sizep0	equ $d008
@@ -244,7 +244,24 @@ cloop	controls
 	mva #0 step
 	mva #1 save.clip
 	
-@	ldx tile.top_index
+	;make fullbomb if less than 10 blocks on the field
+	count_if_more_than_10_blocks
+	beq no_make_fullbomb
+	ldx tile.top_index
+	lda tile.next,x
+	tay
+	lda tile.buffptr,y
+	tay
+	ldx #24
+@	lda tile.buffer,y
+	beq @+
+	mva #C_CHARBOMB tile.buffer,y
+@	dey
+	dex
+	bpl @-1 
+;test end	
+no_make_fullbomb
+loop	ldx tile.top_index
 	lda tile.next,x
 	load_tile_to_current
 	ldx step
@@ -296,7 +313,7 @@ go_next_frame
 	inc step
 	ldx step
 	cpx #C_LENGTH
-	jne @-
+	jne loop
 	
 	mva #0 save.clip
 	rts
@@ -944,9 +961,6 @@ set_blast_line_type
 	jeq ok
 	dec ypos
 	place_tile
-	count_if_more_than_10_blocks
-	beq x0
-	make_fullbomb
 	rts
 ok	draw_current_tile
 x0	rts
