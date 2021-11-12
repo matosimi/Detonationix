@@ -1898,7 +1898,7 @@ stage	equ vram+32*17+26 ;last char
 x1	mva #"0"* stage
 	inc stage-1
 	lda stage-1
-	ora #$10
+	ora #$90
 	sta stage-1 
 	rts
 .endp
@@ -2102,6 +2102,7 @@ x1	lda (w1),y
 	beq found
 	cmp #C_CHARBOMB
 	beq found
+	a_in #C_CHARMEGA #C_CHARMEGA+3 found
 	dey
 	bpl x1
 	add16 #32 w1
