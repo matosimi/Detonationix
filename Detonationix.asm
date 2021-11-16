@@ -90,7 +90,7 @@ C_TOP_LINE	equ 5		;top-left corner of playfield
 C_BOTTOM_LINE	equ C_LINES*32+5	;bottom-left corner of playfield
 
 debug_no_music	equ 1
-debug_skip_title	equ 1
+debug_skip_title	equ 0
 debug_vram_flicker	equ 0
 debug_gravity	equ 0
 debug_tiledemo	equ 0
@@ -98,13 +98,14 @@ debug_tiledemo	equ 0
 	org code
 .local	init
 	mwa #idl $230
-	mva #$26 $2c4
-	mva #$b8 $2c5
-	mva #$52 $2c6
-	mva #$00 $2c8
-	
-	pause 1
-	
+	ldx #8
+@	mva icolors,x $2c0,x
+	dex
+	bpl @-
+	mva >initfnt $2f4	;chbase
+	mva #$80 $26f	;grprior gr.10
+	mva #33 $22f	;sdmctl dma+narrow
+	pause 0
 	mva #$ff portb ;turn on osrom a load next block
 	
 	;detect video system
@@ -123,20 +124,24 @@ x2	cpx 20
 	mva #1 ntsc
 	rts
 sys_ntsc	mva #0 ntsc
-	
 	rts
-idl	dta $70,$70,$70,$48,a(gr3)
-:23	dta 8
-	dta $70
-	dta $42,a(text)
-tptr	equ *-2
+	
+icolors	dta $00,$e4,$e2,$e6,$08,$0c,$04,$ee,$e8
+
+idl	
+:9	dta $70
+	dta $42,a(dtnx4bpp)
+:9	dta 2
 	dta $41,a(idl)
 .endl
-;240 B
-gr3	ins "dtnx.gr3",0,240
-text	dta "       ABBUC Software Contest 2020      "
-game
+
 	ini code ;init
+	org code+$400-320	;320 is size of 4bpp.scr file
+dtnx4bpp	ins "title_new\4bpp\4bpp.scr"
+initfnt	ins "title_new\4bpp\4bpp.fnt",0,120*8
+
+game
+
 
 ;quickhack
 	org mypmbase
@@ -167,7 +172,7 @@ game
 
 	org game
 .local	game_cycle
-
+	
 title	info
 	
 	game_init
@@ -1819,9 +1824,10 @@ x2	lda trig0
 
 ;title screen	
 .proc	info
-	pause 1
+	pause 0
 	sei	
 	mva #0 nmien
+	sta colpf0+4
 	mva #$fe portb	;osrom off, basicrom off
 	mwa #NMI $fffa
 	mwa #titledli dli_ptr
@@ -1829,6 +1835,7 @@ x2	lda trig0
 	mwa #titledl dlistl
 	mva #$c0 nmien
 	mva #32+12+16+1 dmactl
+	mva #0 prior
 	
 	ift debug_skip_title == 0
 	trigger_push_release
@@ -1841,6 +1848,7 @@ titlevbi	pha
 	mva >titlefont chbase
 	mva #$f2 colpf0+2
 	mva #$0c colpf0+1
+	mva #$00 colpf0+4 ;bak
 	jsr rmt.rmt_silence
 	pla
 	rti
