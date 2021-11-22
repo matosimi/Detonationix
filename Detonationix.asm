@@ -136,9 +136,9 @@ idl
 .endl
 
 	ini code ;init
-	org code+$400-320	;320 is size of 4bpp.scr file
+	org code+$400-.FileSize("title_new\4bpp\4bpp.scr") 
 dtnx4bpp	ins "title_new\4bpp\4bpp.scr"
-initfnt	ins "title_new\4bpp\4bpp.fnt",0,120*8
+initfnt	ins "title_new\4bpp\4bpp.fnt",0,120*8	;120 chars used of 128
 
 game
 
@@ -170,6 +170,46 @@ game
 :24	dta $ff
 :24+1	dta $00
 
+	org game
+.local	relocation
+	mpages = (d0-d1)/256 + 1
+	target = $d800
+	.print "pages: ",mpages
+	pause 0
+	mva #0 nmien
+	mva #$fe portb	;load next part
+	ldy #0
+@	lda d1,y
+ptr1	equ *-1
+	sta target,y
+ptr2	equ *-1
+	dey
+	bne @-
+	inc ptr1
+	inc ptr2
+	dex
+	bne @-
+	mva #$ff portb	;load next part
+	mva #$40 nmien
+	rts
+d1
+.rept 16,#
+;take +32*40 to get nontm names
+	ins "title_new\modes\modes.raw",:1*40,40
+	ins "title_new\modes\modes.raw",:1*40+16*40,40	
+.endr 
+d2	ins "title_new\texts\texts_only.fnt",256,1024-256	;first line is not used
+d3	ins "title_new\texts\texts_only.scr"
+
+d0
+	
+.endl
+modesgfx	equ relocation.target
+titlefnt	equ relocation.target+relocation.d2-relocation.d1-256
+titletxt	equ relocation.target+relocation.d3-relocation.d1
+	.print "modesgfx: ",modesgfx
+	ini relocation
+	
 	org game
 .local	game_cycle
 	
@@ -1771,6 +1811,10 @@ x0	rts
 	
 .proc 	game_init
 	mva #0 nmien		
+	;sta colpf0+4
+	;mva #$fe portb	;osrom off, basicrom off
+	mwa #NMI $fffa
+
 	mwa #gamedl dlistl
 	mwa #gamedli dli_ptr
 	mwa #gamevbi vbi_ptr
@@ -1805,6 +1849,7 @@ gdvrptr	dta a(vram+64)
 :23	dta 4+$80
 	dta $41,a(gamedl)
 	
+/*
 titledl	
 :7	dta $70
 	dta $42,a(titvram)
@@ -1812,6 +1857,7 @@ titledl
 	dta $F0,$44,a(texts)
 	dta $70,$70,4,$70,$70,4
 	dta $41,a(titledl)
+*/
 
 ;wait for push and release of trigger
 .proc	trigger_push_release
@@ -1824,7 +1870,15 @@ x2	lda trig0
 
 ;title screen	
 .proc	info
-	pause 0
+	pause 2
+	jsr title_g2f.main
+	rts
+.endp
+
+.local	title_g2f
+	icl "title_new\logo\dtnx_pg_adjusted.asm"
+.endl
+/*	pause 0
 	sei	
 	mva #0 nmien
 	sta colpf0+4
@@ -1871,6 +1925,8 @@ texts	dta "   CREATED BY MARTIN SIMECEK    "
 	dta "   HTTP://MATOSIMI.ATARI.ORG    "	
 	
 	dta "  ABBUC SOFTWARE CONTEST 2020   "
+
+*/
 
 score	equ vram+32*14+21 ;leftmost char
 score_v2	equ vram2+32*14+21 ;leftomost char score vram2
@@ -2563,6 +2619,85 @@ x1	lda vram+C_BOTTOM_LINE,x
 x0	sta leveldone
 	rts
 .endp
+
+.proc	draw_bigscore
+	ldy #0
+loop	lda score,y
+	and #$0f
+	asl @
+	tax
+	sty ytmp
+	tya 
+	asl @
+	tay
+	
+	mva titletxt,x title_g2f.bigscore+1,y
+	mva titletxt+1,x title_g2f.bigscore+2,y
+	mva titletxt+40,x title_g2f.bigscore+41,y
+	mva titletxt+41,x title_g2f.bigscore+42,y
+	
+	ldy ytmp
+	iny
+	cpy #6
+	bne loop
+	rts	
+ytmp	dta 0
+.endp
+	
+	
+/*
+;texts on the title screen
+.proc	type_texts
+	mva #10 type.length
+	ldx #15
+	ldy #0
+	lda #70
+	type
+	
+	mva #12 type.length
+	ldx #0
+	ldy #1
+	lda #0
+	type
+	
+	mva #7 type.length
+	ldx #3
+	ldy #2
+	lda #25
+	type
+	
+	mva #5 type.length
+	ldx #18
+	ldy #1
+	lda #12
+	type
+	
+	rts
+.endp
+
+;a=index of titletxt; x,y-position
+.proc	type
+	sta which
+	mwa #title_g2f.texts w1
+	cpy #0
+	beq x1
+@	add16 #40 w1
+	dey
+	bne @-	
+x1	txa
+	tay
+	ldx which
+@	lda titletxt,x
+	sta (w1),y
+	inx
+	iny
+	dec length
+	bne @-
+	rts
+which	dta 0
+length	dta 0	
+.endp
+*/
 
 stagedata
 	ins 'stages\stagex.dat' ;debug
