@@ -1,6 +1,9 @@
-;DETONATIONIX 25-26.8.2020 - Abbuc 2020
-;additional fixes to 29.8.2020
-;bomb buffer fix (128->256 size) 31.8.2020
+;DETONATIONIX created for Abbuc SWC 2020
+;             fixed and enhanced in 2021
+;use MADS to compile the code:
+;mads.exe Detonationix.asm -o:Detonationix.xex
+;this project is written using PSPad with tabsize=10 
+;-----------------------------------------------------------
 ;TODO: controls - add debounce
 hposp0	equ $d000
 hposm0	equ $d004
@@ -2828,3 +2831,5 @@ _	lda vcount
 	cmp vcount
 	jcc :1
 .endm
+
+

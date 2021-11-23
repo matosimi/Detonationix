@@ -1,0 +1,42 @@
+[Config]
+Compilator.SaveAll=0
+Compilator.Capture=0
+Compilator.CompileOnBackground=0
+Compilator.ProgSaveAll=0
+Compilator.ProgRunSelection=0
+Compilator.LogType=0
+Compilator.LogEncoding=0
+DefaultCP=0
+LogtoEnd=1
+DontOpen=0
+AbsolutePath=0
+FileFormat=0
+ProjectFilesOnly=0
+HTServer=localhost
+[Project tree]
+Detonationix
+	+Main
+		+logo
+			title_new\logo\dtnx_pg_adjusted.asm
+		Detonationix.asm
+[Open project files]
+0=Detonationix.asm
+1=title_new\logo\dtnx_pg_adjusted.asm
+[Selected Project Files]
+Main=Detonationix.asm
+Selected=title_new\logo\dtnx_pg_adjusted.asm
+[Detonationix.asm]
+TopLine=2620
+Caret=41,2637
+Mark1=7,215
+Mark2=11,1874
+Mark3=24,106
+Mark4=17,1817
+Mark5=23,203
+Mark6=10,208
+[title_new\logo\dtnx_pg_adjusted.asm]
+TopLine=33
+Caret=8,36
+Mark1=64,39
+Mark2=12,269
+Mark3=3,75

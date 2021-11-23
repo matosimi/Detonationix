@@ -29,7 +29,8 @@ ant	dta $70
 	dta $70,$F0,$44,a(scr),$04,$84,$04,$04,$84,$84,$84
 	dta $30+$80,$70,$50
 	dta $42+$80,a(titletxt+4*40) ;mode
-	dta $20
+	dta $60
+gfxlms
 :16	dta $4f,a(modesgfx+80*:1)
 	dta $70+$80
 	dta $42+$80,a(titletxt+2*40)
@@ -90,6 +91,8 @@ _lp	lda trig0		; FIRE #0
 	and #1
 	beq stop
 
+	joy_control
+	
 	lda skctl
 	and #$04
 	bne _lp			;wait to press any key; here you can put any own routine
@@ -112,6 +115,7 @@ stop
 
 	rts			;return to ... DOS
 
+
 ; ---	DLI PROGRAM
 
 .local	DLI
@@ -122,7 +126,7 @@ stop
 
 dli1	lda trig0		; FIRE #0
 	beq stop
-
+	
 	lda trig1		; FIRE #1
 	beq stop
 
@@ -260,7 +264,13 @@ dli3
 	sta regA
 	lda >fnt+$400*$00
 	sta wsync		;line=88
-	sta chbase	
+	sta chbase
+	mva joy_control.selector hposp0
+	add #20
+	sta hposp1
+	sta wsync
+	mva #3 sizep0
+	sta sizep1	
 	DLINEW dli9 1 0 0
 
 dli9 ;text part
@@ -284,6 +294,15 @@ dli9 ;text part
 dli10	sta regA
 	sta wsync	
 	mva #$0c color1
+:5	sta wsync
+	mva #$34 colpm0
+	sta colpm1
+	sta wsync
+	mva #$36 colpm0
+	sta colpm1
+:18	sta wsync
+	mva #$34 colpm0
+	sta colpm1
 	DLINEW dli11 1 0 0 
 
 dli11	sta regA
@@ -306,7 +325,7 @@ dli14
 	sta regA
 .rept 6,#
 	sta wsync
-	mva #$60+12-:1*2 colbak
+	mva #$60+10-:1*2 colbak
 .endr
 	sta wsync
 	mva #0 colbak
@@ -344,6 +363,7 @@ VBL
 	;mva #@dmactl(standard|dma|lineX1|players|missiles) dmactl	;set new screen width
 	mva #scr40 dmactl 
 	inc cloc		;little timer
+	inc 20
 
 ; Initial values
 
@@ -405,6 +425,107 @@ quit
 
 ; ---
 	;run main
+	
+.proc	joy_control
+	lda porta
+	and #$0f
+	cmp #$0f
+	beq x0
+:3	lsr @
+	bcc left
+	lsr @
+	bcc right
+	
+x0	rts
+	
+left	lda item
+	beq x0
+	cmp #5 ;last item
+	beq pmleft
+	cmp #1
+	beq pmleft
+	;move LMS left
+	tax
+	mva mlef,x rpt
+@	ldx #1
+	ldy #16
+@	dew gfxlms,x
+	inx
+	inx
+	inx
+	dey
+	bne @-
+	lda rpt
+	lsr @
+	bcc x1
+	pause 0
+x1	dec rpt
+	bne @-1
+	dec item
+	jsr delay
+	rts
+
+pmleft	ldy #5
+@	lda selector
+	sub moves,y
+	sta selector
+	pause 0
+	dey
+	bpl @-
+	dec item
+	jsr delay
+	rts
+	
+right	lda item
+	beq pmright ;first item
+	cmp #5 ;last item
+	beq x0
+	cmp #4
+	beq pmright
+	
+	;move LMS right
+	tax
+	mva mrig,x rpt
+@	ldx #1
+	ldy #16
+@	inw gfxlms,x
+	inx
+	inx
+	inx
+	dey
+	bne @-
+	lda rpt
+	lsr @
+	bcc x2
+	pause 0
+x2	dec rpt
+	bne @-1
+	inc item
+	jsr delay
+	rts
+
+pmright	ldy #5
+@	lda moves,y
+	add:sta selector
+	pause 0
+	dey
+	bpl @-
+	inc item
+	jsr delay
+	rts
+	
+delay	pause 5 ;todo: add debounce
+;TODO: add keyboard, consol controls
+	rts
+	
+selector	dta 50
+item	dta 0
+step	dta 0
+moves	dta 1,4,8,16,20,3
+mlef	dta 0
+mrig	dta 0,14,13,13,0
+rpt	dta 0
+.endp
 ; ---
 
 	opt l-
@@ -435,9 +556,9 @@ player0
 	.he 80 18 20 08 30 00 18 28 10 38 00 18 20 18 08 30
 	.he 08 10 30 08 30 08 00 00 00 40 10 04 01 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff
+	.he ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+	.he ff ff ff 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -452,9 +573,9 @@ player1
 	.he 00 00 02 00 04 00 08 08 08 00 10 10 20 58 00 00
 	.he 00 80 20 00 00 01 0E F0 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff
+	.he ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+	.he ff ff ff 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -521,4 +642,5 @@ USESPRITES = 1
 
 	.def ?old_dli = *
 .ENDM
+
 
