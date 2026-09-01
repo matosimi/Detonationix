@@ -243,7 +243,9 @@ title	info
 	sta gwin
 	;sta gcounter
 	;sta ccounter
-	
+
+	mva #1 controls.trigger_prev	;initialize fire button debounce
+	mva #$0f controls.stick_prev	;initialize stick state (all released)
 	mva #5 speed	;controls responsiveness
 	sta leveldone
 	mva #40 gravtick	;gravity speed
@@ -1017,83 +1019,236 @@ grav_anc	dta 0
 	
 .proc	controls
 	lda handled
-	beq x0
-	
-	lda trig0
-	beq rotate_back
-	
+	jeq x0
+
+	;read ALL inputs first
+	ldx:cpx:req 20	;removes flicker
 	lda porta
 	and #$0f
-	cmp #$0f
-	beq x0	
-	ldx:cpx:req 20	;removes flicker
-	lsr @
-	jcc up
-	lsr @
-	jcc down
-	lsr @
-	jcc left
-	lsr @
-	jcc right
-	
+	sta stick_current
+
+	;read joystick for movement (simultaneous directions allowed)
+	;save horizontal bits for left/right direction comparison next frame
+	lda stick_current
+	and #$0c		;only horizontal bits
+	sta stick_prev
+
+	;check all directions independently (simultaneous movement allowed)
+	;bit 0 = up, bit 1 = down, bit 2 = left, bit 3 = right
+	;0 = pressed, 1 = released
+
+	;check up (bit 0)
+	lda stick_current
+	and #1
+	bne skip_up	;not pressed
+	jsr move_up
+skip_up
+
+	;check down (bit 1) independently with its own delay counter
+	lda stick_current
+	and #2
+	beq down_pressed_now	;bit clear = pressed
+	;down NOT pressed now
+	mva #0 down_delay_counter	;reset for next press
+	jmp after_down_check
+down_pressed_now
+	;down IS pressed now
+	lda down_delay_counter
+	bne @+
+	;timer at 0, allow move
+	jsr move_down
+	jmp after_down_check
+@	;timer still counting, decrement it
+	dec down_delay_counter
+
+after_down_check
+
+	;check left (bit 2)
+	lda stick_current
+	and #4
+	beq left_pressed_now	;bit clear = pressed
+	;left NOT pressed now - reset for next press
+	mva #0 left_delay_counter
+	mva #1 left_first_repeat	;restore flag so next press has 10-frame delay
+	jmp after_left_check
+left_pressed_now
+	;left IS pressed - check timer
+	lda left_delay_counter
+	bne @+
+	;timer at 0, allow move
+	jsr move_left
+	jmp after_left_check
+@	;timer still counting, decrement it
+	dec left_delay_counter
+
+after_left_check
+
+	;check right (bit 3)
+	lda stick_current
+	and #8
+	beq right_pressed_now	;bit clear = pressed
+	;right NOT pressed now - reset for next press
+	mva #0 right_delay_counter
+	mva #1 right_first_repeat	;restore flag so next press has 10-frame delay
+	jmp after_right_check
+right_pressed_now
+	;right IS pressed - check timer
+	lda right_delay_counter
+	bne @+
+	;timer at 0, allow move
+	jsr move_right
+	jmp after_right_check
+@	;timer still counting, decrement it
+	dec right_delay_counter
+
+after_right_check
+
+fire_check
+	;handle rotation independently - after all directions checked
+	lda trig0
+	jeq rotate_check
+	mva #1 trigger_prev	;button released, mark for next press
+
+move_done
 x0	rts
+
+rotate_check
+	lda trigger_prev
+	beq move_done	;button held, don't rotate - just exit
+	mva #0 trigger_prev	;mark that we've processed this press
 
 rotate_back
 	store_current
 	delete_current_tile
 :3	rotate_tile
 	validate_current_tile
-	jeq ok
+	jeq rotate_ok
 	restore_current
-	jmp err
-	
-up	store_current
+	draw_current_tile	;redraw piece if rotation failed
+	jmp check_move
+
+check_move
+	;after rotation, allow movement to continue on same frame
+	lda stick_current
+	cmp #$0f
+	beq move_done	;no stick input
+
+	;re-check down only after rotation (most important for tetris)
+	lda stick_current
+	and #2
+	bne skip_down_after_rotate
+	;down is still pressed, continue movement processing
+	lda down_delay_counter
+	bne skip_down_after_rotate
+	;timer at 0, allow move
+	jsr move_down
+skip_down_after_rotate
+	jmp move_done
+
+rotate_ok
+	draw_current_tile
+	jmp check_move	;still process directional input after successful rotation
+
+;movement with auto-repeat timing
+.proc	move_left
+	jsr do_move_left
+	;after move, check if first repeat or subsequent
+	lda left_first_repeat
+	beq @+
+	;first repeat: set up 10-frame delay before repeating
+	mva #0 left_first_repeat	;mark as no longer first repeat
+	mva #10 left_delay_counter	;wait 10 frames before first repeat
+	rts
+@	;subsequent repeats: faster, every 2 frames
+	mva #2 left_delay_counter	;repeat every 2 frames
+	rts
+.endp
+
+.proc	move_right
+	jsr do_move_right
+	;after move, check if first repeat or subsequent
+	lda right_first_repeat
+	beq @+
+	;first repeat: set up 10-frame delay before repeating
+	mva #0 right_first_repeat	;mark as no longer first repeat
+	mva #10 right_delay_counter	;wait 10 frames before first repeat
+	rts
+@	;subsequent repeats: faster, every 2 frames
+	mva #2 right_delay_counter	;repeat every 2 frames
+	rts
+.endp
+
+.proc	move_down
+	jsr do_move_down
+	;down repeats very fast - every frame
+	mva #1 down_delay_counter	;repeat every frame (fastest repeat)
+	rts
+.endp
+
+.proc	move_up
+	;up usually not used in tetris
+	rts
+.endp
+
+.proc	do_move_left
 	delete_current_tile
-	rotate_tile
+	dec xpos
 	validate_current_tile
-	jeq ok
-	restore_current
-	jmp err
-	
-down	delete_current_tile
+	jeq @+
+	inc xpos	;revert
+	jmp move_failed
+@	draw_current_tile
+	rts
+move_failed
+	draw_current_tile
+	rts
+.endp
+
+.proc	do_move_right
+	delete_current_tile
+	inc xpos
+	validate_current_tile
+	jeq @+
+	dec xpos	;revert
+	jmp move_failed
+@	draw_current_tile
+	rts
+move_failed
+	draw_current_tile
+	rts
+.endp
+
+.proc	do_move_down
+	delete_current_tile
 	inc ypos
 	validate_current_tile
-	jeq dgrav
+	jeq @+
 	dec ypos	;revert
-	jmp err
-dgrav	mva #0 gcounter	;reset gravity when forced move down
+	jmp move_failed
+@	mva #0 gcounter	;reset gravity when forced move down
 	ldx speed
 	dex
 	stx ccounter	;makes falling faster than other controls
 	draw_current_tile
-	mva #0 handled
 	rts
-	
-left	delete_current_tile
-	dec xpos
-	validate_current_tile
-	jeq ok
-	inc xpos	;revert
-	jmp err
-	
-right	delete_current_tile
-	inc xpos
-	validate_current_tile
-	jeq ok
-	dec xpos
-	jmp err
+move_failed
+	draw_current_tile
+	rts
+.endp
 
-ok	draw_current_tile
-	mva #0 handled
-	sta ccounter
-	rts
-
-err	draw_current_tile
-	rts
-	
 handled	dta 0
+trigger_prev	dta 0	;debounce for fire button
+stick_prev	dta $0f	;previous joystick state (all released)
+stick_current	dta $0f	;current joystick state
 
-.endp	
+left_delay_counter	dta 0	;countdown timer for left repeat delay
+right_delay_counter	dta 0	;countdown timer for right repeat delay
+down_delay_counter	dta 0	;countdown timer for down repeat delay
+
+left_first_repeat	dta 0	;flag: 1 if first repeat pending, 0 if subsequent
+right_first_repeat	dta 0	;flag: 1 if first repeat pending, 0 if subsequent
+
+.endp
 
 ;fills buffer with tiles
 .proc	init_tile_buffer
@@ -1145,7 +1300,21 @@ first
 	sta controls.handled
 	sta gcounter
 	sta ccounter
-	
+	mva #1 controls.trigger_prev	;start with button released
+
+	;reset movement timers for new tile
+	mva #0 controls.left_delay_counter	;no delay initially
+	mva #0 controls.right_delay_counter	;no delay initially
+	mva #0 controls.down_delay_counter	;no delay initially
+	mva #1 controls.left_first_repeat	;mark first repeat pending
+	mva #1 controls.right_first_repeat	;mark first repeat pending
+	mva #$0c controls.stick_prev	;reset horizontal state (center, both released)
+
+	;note: move_left/move_right will set timers to:
+	; - 10 frames delay before first repeat
+	; - 2 frames repeat thereafter (30 moves/sec at 60 FPS, very responsive)
+	;release detection resets timers for instant next tap
+
 	rts
 .endp
 
@@ -1239,7 +1408,7 @@ stats	dta d'yqqqqqqz'
 	dta d'pGRAND p'
 	dta d'pSCORE p'
 	dta d'p      p'
-	dta d'rqqqqqqs'
+	dta d'%$$$$$$&'
 .endp
 	
 .proc	draw_playfield
@@ -1757,7 +1926,7 @@ x1	lda random
 	
 playfield
 	dta d'p',d'          ',d'p'*
-	dta d'rqqqqqqqqqqs'		
+	dta d'%$$$$$$$$$$&'		
 
 
 ;# = regular brick which can be bomb
