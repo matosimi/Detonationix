@@ -43,9 +43,10 @@ ybuf		equ $1b00
 bomb_buffer	equ $1c00	;L0200
 blast_size_buffer	equ $1e00	;L0200
 code		equ $2000
-mypmbase		equ $7c00
 msx		equ $9000
 player		equ $a400
+tenstage		equ $c000	;10*22*10 => L898
+mypmbase		equ $cc00
 
 ;variables
 vbi_ptr	equ $a0
@@ -77,6 +78,8 @@ leveldone	equ $bd ;0 if level is done
 gwin	equ $be ;1=player is the winner
 fftmp_seg	equ $bf ;floodfill temp for segments
 stageno	equ $c0 ;c0,c1,c2: 3bytes current stage
+unzx7.token	equ $c3
+unzx7.lenL	equ $c4
 
 C_CHARBRICK	equ 't'*
 C_CHAREMPTY	equ " "
@@ -146,7 +149,7 @@ initfnt	ins "title_new\4bpp\4bpp.fnt",0,120*8	;120 chars used of 128
 
 game
 
-
+/*
 ;quickhack
 	org mypmbase
 :38	dta $ff
@@ -173,17 +176,19 @@ game
 :11*8-1	dta $0f
 :24	dta $ff
 :24+1	dta $00
-
+*/
 	org game
 .local	relocation
 	mpages = (d0-d1)/256 + 1
 	target = $d800
 	.print "pages: ",mpages
 	pause 0
+	sei
 	mva #0 nmien
-	mva #$fe portb	;load next part
+	mva #$fe portb	;turn off osrom
+	ldx #mpages
 	ldy #0
-@	lda d1,y
+@	lda source,y
 ptr1	equ *-1
 	sta target,y
 ptr2	equ *-1
@@ -195,30 +200,60 @@ ptr2	equ *-1
 	bne @-
 	mva #$ff portb	;load next part
 	mva #$40 nmien
+	cli
 	rts
+.endl
+source
+	org $d800,*
 d1
-/*
-.rept 16,#
-;take +32*40 to get nontm names
-	ins "title_new\modes\modes.raw",:1*40,40
-	ins "title_new\modes\modes.raw",:1*40+16*40,40	
-.endr */
-d2	;ins "title_new\texts\texts2026.fnt"
-d3	;ins "title_new\texts\texts2026.dat"
+;stagedata
+.rept 10,#
+szx7_0:1	ins 'stages\tenstages00:1.dat.zx7'
+.endr
+.rept 10,#
+szx7_1:1	ins 'stages\tenstages10:1.dat.zx7'
+.endr
+.rept 10,#
+szx7_2:1	ins 'stages\tenstages20:1.dat.zx7'
+.endr
+
+pmgtemplate
+:38	dta $ff
+:218-33	dta $f0
+:9	dta $ff
+:33-9	dta $00
+
+:38	dta $ff
+:218-33	dta $00
+:9	dta $ff
+:33-9	dta $00
+
+:38+10	dta $ff
+:9*8-1	dta $f0
+:1	dta $ff
+:11*8-1	dta $f0
+:24	dta $ff
+:24+1	dta $00
+
+:38+10	dta $ff
+:9*8-1	dta $0f
+:1	dta $ff
+:11*8-1	dta $0f
+:24	dta $ff
+:24+1	dta $00
 
 d0
 	
-.endl
-modesgfx	equ relocation.target
-titlefnt	equ relocation.target+relocation.d2-relocation.d1-256
-titletxt	equ relocation.target+relocation.d3-relocation.d1
-	.print "modesgfx: ",modesgfx
+.print "stage zx7 data: ",d1,"-",pmgtemplate
+.print "reloc.end: ",*
 	ini relocation
 	
 	org game
+
 .local	game_cycle
 	
-title	info
+title	pause 2
+	jsr title_g2f.main
 	
 	game_init
 	rmt.init
@@ -233,6 +268,14 @@ title	info
 	reset_stage
 	reset_score
 	reset_gscore
+
+	;turn on the screen
+	vcount_wait_for_0
+	mva #$c0 nmien 
+	pause 0
+	mva #32+1+12+16 dmactl
+	
+
 	load_stage
 	init_tile_buffer
 	
@@ -273,7 +316,7 @@ x1	lda leveldone
 XXXX	next_stage
 	inc leveldone
 	lda gwin ;win
-	bne title
+	jne title
 	
 x2	mva #1 controls.handled
 cloop	controls
@@ -1365,6 +1408,15 @@ x1
 @	mva data+32*4,x vramtop,x
 	dex
 	bpl @-
+	
+	;draw pmg overlay
+	;copy ingame pmg from the template
+	ldx #0
+@
+:4	mva pmgtemplate+:1*$100,x mypmbase+:1*$100,x
+	dex 
+	bne @-
+	
 	rts
 ;playfield background - vanishing tetris pieces
 data	ins 'bg2_narr/bg2_narrow.scr'
@@ -1985,15 +2037,14 @@ x0	rts
 	
 .proc 	game_init
 	mva #0 nmien		
-	;sta colpf0+4
-	;mva #$fe portb	;osrom off, basicrom off
+	sta dmactl
+	mva #$fe portb	;osrom off, basicrom off
 	mwa #NMI $fffa
 
 	mwa #gamedl dlistl
 	mwa #gamedli dli_ptr
 	mwa #gamevbi vbi_ptr
-	mva #$c0 nmien ;c0
-	mva #32+1+12+16 dmactl
+	
 	mva #$03 gractl
 	mva >mypmbase pmbase
 	mva #4 prior
@@ -2002,6 +2053,7 @@ x0	rts
 :4	mva #64+32*:1 hposp0+:1
 :4	mva #$18 colpm0+:1
 :4	mva #3 sizep0+:1
+
 	rts
 .endp
 	
@@ -2042,57 +2094,12 @@ x2	lda trig0
 	rts
 .endp
 
-;title screen	
-.proc	info
-	pause 2
-	jsr title_g2f.main
-	rts
-.endp
 
 .local	title_g2f
 	integrated = 1
 	icl "title_new\logo\dtnx_pg_adjusted.asm"
 .endl
-/*	pause 0
-	sei	
-	mva #0 nmien
-	sta colpf0+4
-	mva #$fe portb	;osrom off, basicrom off
-	mwa #NMI $fffa
-	mwa #titledli dli_ptr
-	mwa #titlevbi vbi_ptr
-	mwa #titledl dlistl
-	mva #$c0 nmien
-	mva #32+12+16+1 dmactl
-	mva #0 prior
-	
-	ift debug_skip_title == 0
-	trigger_push_release
-	eif
-	
-	rts
-
-titlevbi	pha
-	inc 20
-	mva >titlefont chbase
-	mva #$f2 colpf0+2
-	mva #$0c colpf0+1
-	mva #$00 colpf0+4 ;bak
-	jsr rmt.rmt_silence
-	pla
-	rti
-
-titledli	pha
-	sta wsync
-	mva >gamefont chbase
-	mva #$22 colpf0+1
-	mva #$1c colpf0
-	sta colpf0+2
-	pla
-	rti
-.endp
-
-
+/*	
 titvram	ins 'title\detx_title.scr'
 
 texts	dta "   CREATED BY MARTIN SIMECEK    "
@@ -2129,7 +2136,7 @@ stage	equ vram+32*17+26 ;last char
 .endp
 
 .proc	inc_stage
-	inc stageno	;number form
+	inc stageno+2	;number form
 	inc stage		;char form
 	lda stage
 	a_ge #"9"*+1 x1
@@ -2709,7 +2716,24 @@ text	dta d"        "
 
 ;load stage based on stageno
 .proc	load_stage
+	lda stageno+2
+	bne justpick
+	;do the actual loading
 	lda stageno
+	asl @
+	sta dble
+	asl @
+	asl @
+	add dble:#$00
+	add stageno+1
+	asl @
+	tax
+	mwa stagetenpointers,x unzx7.ZX7_INPUT
+	mwa #tenstage unzx7.ZX7_OUTPUT
+	unzx7
+	;10 stages unpacked
+justpick		
+	lda stageno+2
 	asl @
 	tax
 	mwa #vram+C_TOP_LINE w1
@@ -2751,7 +2775,7 @@ x3	dex
 	
 noanim	dta 0
 stages	
-:15	dta a(stagedata+:1*220)
+:10	dta a(tenstage+:1*220)
 .endp
 	
 .proc	game_over
@@ -2796,22 +2820,13 @@ x0	sta leveldone
 .endp
 
 
-stagedata
-.rept 10,#
-szx7_0:1	ins 'stages\tenstages00:1.dat.zx7'
-.endr
-.rept 10,#
-szx7_1:1	ins 'stages\tenstages10:1.dat.zx7'
-.endr
-.rept 10,#
-szx7_2:1	ins 'stages\tenstages20:1.dat.zx7'
-.endr
+
 
 stagetenpointers
 :10	dta a(szx7_0:1)
 :10	dta a(szx7_1:1)
 :10	dta a(szx7_2:1)
-.print "stage zx7 data: ",stagedata,"-",*
+
 
 	guard $9000
 
@@ -2905,10 +2920,64 @@ tp	dta 0
 .endp	
 	eif
 
+;compressor: https://github.com/antoniovillena/zx7mini
+;http://xxl.atari.pl/zx7-decompressor/
+.proc	unzx7
+	lda #$80
+	sta token
+copyby	jsr GET_BYTE
+	jsr PUT_BYTE
+mainlo	jsr getbits
+	bcc copyby
+	lda #$01
+	sta lenL
+lenval	jsr getbits
+	rol lenL
+	bcs _ret	; koniec
+	jsr getbits
+	bcc lenval
+	jsr GET_BYTE
+	sta offsL
+	lda ZX7_OUTPUT
+	clc ; !!!! C=0
+	sbc offsL:#$ff
+	sta copysrc
+	lda ZX7_OUTPUT+1
+	sbc #$00
+	sta copysrc+1
+cop0	lda copysrc:$ffff
+	inw copysrc
+	jsr PUT_BYTE
+	dec lenL
+	bne cop0
+	jmp mainlo
+
+getbits	asl token	; bez c
+	bne _ret
+	jsr GET_BYTE
+	rol @	; c
+	sta token
+_ret	rts
+
+;token	dta 0	;moved to zero page
+;lenL	dta 0
+
+GET_BYTE	lda ZX7_INPUT:$ffff
+	inw ZX7_INPUT
+	rts
+
+PUT_BYTE	sta ZX7_OUTPUT:$ffff
+	inw ZX7_OUTPUT
+	rts
+.print "unzx7 length: ",*-unzx7
+.endp	
+
 	run game
 
 .macro	vcount_wait_for_0
-	lda:rne vcount
+	lda #0
+@	cmp vcount
+	bne @-
 .endm
 
 .macro	wait_vcount_out ' '
