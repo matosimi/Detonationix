@@ -2,7 +2,9 @@
 /*  Use MADS http://mads.atari8.info/  */
 /*  Mode: DLI (char mode)              */
 /***************************************/
+	.ifndef integrated
 integrated = 0
+	eif
 	icl "dtnx_pg.h"
 	ift integrated == 1
 begin

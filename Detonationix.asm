@@ -54,7 +54,7 @@ w1	equ $a4 ;2bytes
 w2	equ $a6 ;2bytes
 ntsc	equ $a8 ;0=pal,1=ntsc
 ntsctimer	equ $a9 ;6th frame counter
-stageno	equ $aa ;current stage
+;stageno	equ $aa ;current stage
 xpos	equ $ab ;x position of tile
 ypos	equ $ac ;y position of tile
 ;ctype	equ $ad ;current tile type
@@ -76,6 +76,7 @@ ccounter	equ $bc ;controls counter (vbi)
 leveldone	equ $bd ;0 if level is done
 gwin	equ $be ;1=player is the winner
 fftmp_seg	equ $bf ;floodfill temp for segments
+stageno	equ $c0 ;c0,c1,c2: 3bytes current stage
 
 C_CHARBRICK	equ 't'*
 C_CHAREMPTY	equ " "
@@ -2049,6 +2050,7 @@ x2	lda trig0
 .endp
 
 .local	title_g2f
+	integrated = 1
 	icl "title_new\logo\dtnx_pg_adjusted.asm"
 .endl
 /*	pause 0
@@ -2792,92 +2794,24 @@ x1	lda vram+C_BOTTOM_LINE,x
 x0	sta leveldone
 	rts
 .endp
-/* bullshit
-.proc	draw_bigscore
-	ldy #0
-loop	lda score,y
-	and #$0f
-	asl @
-	tax
-	sty ytmp
-	tya 
-	asl @
-	tay
-	
-	mva titletxt,x title_g2f.bigscore+1,y
-	mva titletxt+1,x title_g2f.bigscore+2,y
-	mva titletxt+40,x title_g2f.bigscore+41,y
-	mva titletxt+41,x title_g2f.bigscore+42,y
-	
-	ldy ytmp
-	iny
-	cpy #6
-	bne loop
-	rts	
-ytmp	dta 0
-.endp
-*/	
-	
-/*
-;texts on the title screen
-.proc	type_texts
-	mva #10 type.length
-	ldx #15
-	ldy #0
-	lda #70
-	type
-	
-	mva #12 type.length
-	ldx #0
-	ldy #1
-	lda #0
-	type
-	
-	mva #7 type.length
-	ldx #3
-	ldy #2
-	lda #25
-	type
-	
-	mva #5 type.length
-	ldx #18
-	ldy #1
-	lda #12
-	type
-	
-	rts
-.endp
 
-;a=index of titletxt; x,y-position
-.proc	type
-	sta which
-	mwa #title_g2f.texts w1
-	cpy #0
-	beq x1
-@	add16 #40 w1
-	dey
-	bne @-	
-x1	txa
-	tay
-	ldx which
-@	lda titletxt,x
-	sta (w1),y
-	inx
-	iny
-	dec length
-	bne @-
-	rts
-which	dta 0
-length	dta 0	
-.endp
-*/
 
 stagedata
-	ins 'stages\stagex.dat' ;debug
-.rept 9,#+1
-	ins 'stages\stage0:1.dat'
+.rept 10,#
+szx7_0:1	ins 'stages\tenstages00:1.dat.zx7'
 .endr
-:6	ins 'stages\stage1:1.dat'
+.rept 10,#
+szx7_1:1	ins 'stages\tenstages10:1.dat.zx7'
+.endr
+.rept 10,#
+szx7_2:1	ins 'stages\tenstages20:1.dat.zx7'
+.endr
+
+stagetenpointers
+:10	dta a(szx7_0:1)
+:10	dta a(szx7_1:1)
+:10	dta a(szx7_2:1)
+.print "stage zx7 data: ",stagedata,"-",*
 
 	guard $9000
 
@@ -2923,7 +2857,7 @@ stop	dta 0
 .endl	
 	
 	
-*/
+
 pcolors	
 ;:32	dta 0
 C_LUM	equ $8
