@@ -2,9 +2,11 @@
 /*  Use MADS http://mads.atari8.info/  */
 /*  Mode: DLI (char mode)              */
 /***************************************/
-
+integrated = 0
 	icl "dtnx_pg.h"
+	ift integrated == 1
 begin
+	eif
 	org $f0
 
 fcnt	.ds 2
@@ -17,36 +19,39 @@ regY	.ds 1
 
 WIDTH	= 40
 HEIGHT	= 30
-
+	ift integrated == 0
 ; ---	BASIC switch OFF
-	;org $2000\ mva #$ff portb\ rts\ ini $2000
-
+	org $2000\ mva #$ff portb\ rts\ ini $2000
+	icl "..\..\matosimi_macros.asx"
 ; ---	MAIN PROGRAM
+	org $2000
+	els
 	org begin ;$2000
+	eif
 .print	"free before DL: ",ant-*
 	.align $100
 ant	dta $70
 	dta $70,$F0,$44,a(scr),$04,$84,$04,$04,$84,$84,$84
-	dta $30+$80,$70,$50
-	dta $42+$80,a(titletxt+4*40) ;mode
-	dta $60
-gfxlms
-:16	dta $4f,a(modesgfx+80*:1)
+	dta $30+$80,$70,$20
+	dta $42+$80,a(texts2026) ;mode
+	dta $30
+	dta 2	;mode selection options
 	dta $70+$80
-	dta $42+$80,a(titletxt+2*40)
-	dta $20
-	dta $42,a(bigscore),2+$80
-	dta $42,a(titletxt+3*40),$70+$80
+	dta 2+$80	;stage set text
+	dta $30
+	dta 2	;stage selection options
+	dta $70
+	dta 2+$80	;last/high score
+	dta $30
+	dta 2,2,$82	;bigscore+stage
+	dta $80+$30
 	dta $41,a(ant)
 
 scr	ins "dtnx_pg.scr"
-
-bigscore	
-:40*2	dta d"@"
-;:40*15	dta 0	;we have 15 lines here 
-.print	"free before font: ",fnt-*
+texts2026	ins "..\texts2026.dat"
 	.ALIGN $0400
 fnt	ins "dtnx_pg.fnt"
+textfnt	ins "..\texts2026.fnt"
 .print	"free before pmg: ",pmg-*
 	ift USESPRITES
 	.ALIGN $0800
@@ -73,7 +78,7 @@ main
 	sta dmactl
 	mva #$fe portb		;switch off ROM to get 16k more ram
 
-	draw_bigscore
+	;todo: draw_bigscore
 
 	mwa #NMI $fffa		;new NMI handler
 
@@ -103,7 +108,7 @@ null	jmp DLI.dli1		;CPU is busy here, so no more routines allowed
 
 	eif
 
-
+	jmp *
 stop
 	mva #$00 pmcntl		;PMG disabled
 	tax
@@ -265,20 +270,30 @@ dli3
 	lda >fnt+$400*$00
 	sta wsync		;line=88
 	sta chbase
-	mva joy_control.selector hposp0
-	add #20
-	sta hposp1
+	mva joy_control.selector+1 hposp0
+	;add #20
+	;sta hposp1
 	sta wsync
 	mva #3 sizep0
-	sta sizep1	
+	sta hposm0
+	sta sizep1
+	sta sizep2
+	mva #$00 colpm2
+	sta colpm1
+	mva #$d4 hposp2
+	mva #$0c hposp1
 	DLINEW dli9 1 0 0
 
 dli9 ;text part
 	sta regA
 	sta wsync		
-	lda >titlefnt		
+	lda >textfnt	
 	sta chbase
-			
+	mva #$6c colpm3
+	mva #$2c hposp3
+	mva #$d2 hposm3
+	mva #$01 $d01b ;prior
+	
 .rept 6,#
 	sta wsync
 	mva #$60+:1*2 colbak
@@ -286,39 +301,63 @@ dli9 ;text part
 	sta wsync
 	mva #$00 colbak
 
-	mva #$0f color1
-	mva #$00 color2
+	mva #$0e color1
+	mva #$e2 color2
 	
 	DLINEW dli10 1 0 0
-	
+
+;easy normal hard	
 dli10	sta regA
 	sta wsync	
-	mva #$0c color1
-:5	sta wsync
-	mva #$34 colpm0
-	sta colpm1
+	;mva #$0e color1
+	mva #$00 color2
 	sta wsync
-	mva #$36 colpm0
-	sta colpm1
-:18	sta wsync
 	mva #$34 colpm0
-	sta colpm1
+	;sta colpm1
+:4	sta wsync
+	mva cl0:#$36 colpm0
+	;sta colpm1
+:7	sta wsync
+	mva #$34 colpm0
+	;sta colpm1
 	DLINEW dli11 1 0 0 
 
 dli11	sta regA
 	sta wsync	
-	mva #$0f color1
+	;mva #$0f color1
+	mva #$e2 color2
+	mva joy_control.selector+2 hposp0
+	DLINEW dli_stage_set 1 0 0 
+
+dli_stage_set
+	sta regA
+	sta wsync	
+	;mva #$0c color1
+	mva #$00 color2
+	sta wsync
+	mva #$34 colpm0
+	;sta colpm1
+:4	sta wsync
+	mva cl1:#$36 colpm0
+	;sta colpm1
+:7	sta wsync
+	mva #$34 colpm0
+	;sta colpm1
+	;mva #$0e color1
+	mva #$e2 color2
 	DLINEW dli12 1 0 0 
 
 dli12	sta regA
 	sta wsync	
-	mva #$0a color1
+	mva #$08 color1
+	mva #$00 color2
 	DLINEW dli13 1 0 0 
 
 	
 dli13	sta regA
 	sta wsync
-	mva #$08 color1
+	;mva #$08 color1
+	;mva #$00 color2
 	DLINEW dli14 1 0 0 
 
 dli14	
@@ -412,8 +451,21 @@ x4	lda #$00
 	sta sizem
 
 	mwa #DLI.dli_start dliv	;set the first address of DLI interrupt
-
 ;this area is for yours routines
+	lda 20
+	and #$06
+	eor #$36
+	add #2
+	ldx joy_control.line
+	cpx #2
+	beq @+
+	;line1 
+	sta DLI.cl0
+	jmp quit
+	
+@	;line2
+	sta DLI.cl1
+	jmp quit
 
 quit
 	lda regA
@@ -423,94 +475,83 @@ quit
 
 .endp
 
-; ---
-	;run main
-	
+; ---	
 .proc	joy_control
 	lda porta
 	and #$0f
 	cmp #$0f
 	beq x0
-:3	lsr @
+	lsr @
+	bcs @+
+	mva #1 line
+	jmp set_active
+@	lsr @
+	bcs @+
+	mva #2 line
+	jmp set_active
+
+@	lsr @
 	bcc left
 	lsr @
 	bcc right
 	
 x0	rts
 	
+set_active 
+	lda line
+	cmp #1
+	beq @+
+	mva #$36 DLI.cl0
+	sta DLI.cl1
+	;mva #$56 DLI.cl1
+	mva item+2 item
+	mva selector+2 selector
+	rts
+@	;mva #$56 DLI.cl0
+	mva #$36 DLI.cl1
+	sta DLI.cl0
+	mva item+1 item
+	mva selector+1 selector
+	rts
+	
+	
 left	lda item
-	beq x0
-	cmp #5 ;last item
+	cmp #2 ;last item
 	beq pmleft
 	cmp #1
 	beq pmleft
-	;move LMS left
-	tax
-	mva mlef,x rpt
-@	ldx #1
-	ldy #16
-@	dew gfxlms,x
-	inx
-	inx
-	inx
-	dey
-	bne @-
-	lda rpt
-	lsr @
-	bcc x1
-	pause 0
-x1	dec rpt
-	bne @-1
-	dec item
-	jsr delay
 	rts
 
 pmleft	ldy #5
 @	lda selector
 	sub moves,y
 	sta selector
+	ldx line
+	sta selector,x
 	pause 0
 	dey
 	bpl @-
 	dec item
+	mva item item,x
 	jsr delay
 	rts
 	
 right	lda item
 	beq pmright ;first item
-	cmp #5 ;last item
-	beq x0
-	cmp #4
+	cmp #1
 	beq pmright
-	
-	;move LMS right
-	tax
-	mva mrig,x rpt
-@	ldx #1
-	ldy #16
-@	inw gfxlms,x
-	inx
-	inx
-	inx
-	dey
-	bne @-
-	lda rpt
-	lsr @
-	bcc x2
-	pause 0
-x2	dec rpt
-	bne @-1
-	inc item
-	jsr delay
 	rts
-
+	
 pmright	ldy #5
 @	lda moves,y
 	add:sta selector
+	ldx line
+	mva selector selector,x
 	pause 0
 	dey
 	bpl @-
 	inc item
+	mva item item,x
 	jsr delay
 	rts
 	
@@ -518,8 +559,9 @@ delay	pause 5 ;todo: add debounce
 ;TODO: add keyboard, consol controls
 	rts
 	
-selector	dta 50
-item	dta 0
+selector	dta $3a,$3a,$3a
+item	dta 0,0,0
+line	dta 1
 step	dta 0
 moves	dta 1,4,8,16,20,3
 mlef	dta 0
@@ -528,43 +570,58 @@ rpt	dta 0
 .endp
 ; ---
 
+	ift integrated == 0
+	run main
+	eif
+
 	opt l-
 
 .MACRO	SPRITES
 missiles
+
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 02
 	.he 00 02 02 00 02 00 02 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+.rept 11
+	dta %00110000
+.endr
+.rept 100
+	dta $ff
+.endr
+.rept 256-6*16-11-100-10
+	dta %00110000
+.endr
+
+.rept 10
+	dta 0
+.endr
+
 player0
+;.rept 256
+;	dta $ff
+;.endr
+
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 40 00 01 0A 20
 	.he 80 18 20 08 30 00 18 28 10 38 00 18 20 18 08 30
 	.he 08 10 30 08 30 08 00 00 00 40 10 04 01 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff
-	.he ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+	.he 00 00 00 00 00 00 00 00 00 00 00 00 00
+	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff ff
+	.he ff ff ff ff ff ff ff 00 00 00 00 00 00 00 00 00
+	.he 00 00 00 00 00 00 00 00 00 00 ff ff ff ff ff ff
 	.he ff ff ff 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+	.he 00 00 00 
 player1
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -572,16 +629,11 @@ player1
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 02 00 04 00 08 08 08 00 10 10 20 58 00 00
 	.he 00 80 20 00 00 01 0E F0 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ff
-	.he ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
-	.he ff ff ff 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+	.he 00 00
+.rept 256-16*6-2
+	dta 255
+.endr
+
 player2
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -589,16 +641,10 @@ player2
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 80 40 00 00 00 20 00 00 00 00 00 20 70 20 50
 	.he 20 00 00 00 30 C0 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+	.he 00 00
+.rept 256-16*6-2
+	dta 255
+.endr
 player3
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
@@ -606,16 +652,17 @@ player3
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 20 70 70
 	.he 70 20 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-	.he 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+	
+.rept 11
+	dta 0
+.endr
+.rept 100
+	dta $c0
+.endr
+.rept 256-6*16-11-100
+	dta 0
+.endr
+
 .ENDM
 
 USESPRITES = 1

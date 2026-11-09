@@ -196,13 +196,14 @@ ptr2	equ *-1
 	mva #$40 nmien
 	rts
 d1
+/*
 .rept 16,#
 ;take +32*40 to get nontm names
 	ins "title_new\modes\modes.raw",:1*40,40
 	ins "title_new\modes\modes.raw",:1*40+16*40,40	
-.endr 
-d2	ins "title_new\texts\texts_only.fnt",256,1024-256	;first line is not used
-d3	ins "title_new\texts\texts_only.scr"
+.endr */
+d2	;ins "title_new\texts\texts2026.fnt"
+d3	;ins "title_new\texts\texts2026.dat"
 
 d0
 	
@@ -2791,7 +2792,7 @@ x1	lda vram+C_BOTTOM_LINE,x
 x0	sta leveldone
 	rts
 .endp
-
+/* bullshit
 .proc	draw_bigscore
 	ldy #0
 loop	lda score,y
@@ -2815,7 +2816,7 @@ loop	lda score,y
 	rts	
 ytmp	dta 0
 .endp
-	
+*/	
 	
 /*
 ;texts on the title screen
