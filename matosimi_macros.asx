@@ -2,6 +2,7 @@
 ; 24.08.2020
 ; 26.10.2021 - (corrected/fixed) a_out macro with < > interval
 ;	   - replaced named labels with underscored
+; 18.01.2023 - added LMS macro
 
 ;add 8bit number to 16bit number
 .macro	add16 ' '
@@ -148,6 +149,14 @@ __
 	jcs :2
 .endm
 
+.macro	bge ' '
+	jcs :1
+.endm
+
+.macro	blt ' '
+	jcc :1
+.endm
+
 .macro	pause ' '
 	ift :1 == 0
 	lda:cmp:req 20
@@ -162,7 +171,8 @@ __
 ;guard if compiler reaches over given address
 .macro guard
 	ift *>=:1+1
-	.error "Guarded address ",:1+1 , ", actual address ",*
+	;.error "Guarded address ",:1+1 , ", actual address ",*
+	.print "ERROR: Guarded address ",:1+1 , ", actual address ",*
 	eif
 .endm
 
@@ -176,3 +186,35 @@ __
 	.endr
 	guard :1	
 .endm
+
+.macro	halt
+	dta $02	;KIL instruction
+.endm
+
+;skip next byte
+.macro	skip1
+	dta $80	;always takes 2cycles
+.endm
+
+;skip 2 next bytes
+.macro 	skip2 ;tripple nop
+	dta $0c	;always takes 4cycles 
+.endm
+
+;this is supposed to be used when populating display list(s)
+;it adds LMS address and checks whether the line (data) crosses the 4kB boundary
+;which results in incorrect characters/pixels when crossed 
+.macro 	LMS base_address,multiplier,linesize ' '
+	?addr = :base_address+:multiplier*:linesize
+	ift (?addr & $f000) != ((?addr+:linesize) & $f000)
+	?shift = (?addr & $f000) + $1000 - ?addr
+		ift ?shift != :linesize
+		.print "LMS warning: ",?addr, " on line: ",:multiplier,". Move this block (",:base_address,") ",?shift," bytes further."
+		eif
+	eif
+	ift ((?addr & $f000) - (:base_address & $f000) >= $2000) && (:linesize == 40)
+	.print "ERROR: LMS unalignable block ",:base_address," overflows through three 4k blocks!" 
+	eif
+	.word ?addr
+.endm	
+

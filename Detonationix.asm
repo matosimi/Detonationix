@@ -101,6 +101,7 @@ debug_skip_title	equ 0
 debug_vram_flicker	equ 0
 debug_gravity	equ 0
 debug_tiledemo	equ 0
+debug_start_stage	equ 49	;0=off, 1-99 within selected stage set
 
 	org code
 .local	init
@@ -265,6 +266,7 @@ title	pause 2
 	draw_playfield
 	
 	reset_stage
+	configure_tile_pool
 	write_stage
 	reset_score
 	reset_gscore
@@ -278,7 +280,6 @@ title	pause 2
 	mva #$c0 nmien 
 	pause 0
 	mva #32+1+12+16 dmactl
-	
 	
 	init_tile_buffer
 	
@@ -1304,6 +1305,20 @@ right_first_repeat	dta 0	;flag: 1 if first repeat pending, 0 if subsequent
 	mva #tile.C_BUFFSIZE-1 tile.bottom_index
 	mva #tile.C_BUFFSIZE-1 repeat
 	mva #-1 tile.fullbomb_counter
+	mva #0 tile.history_count
+	sta tile.opening_pending
+	sta tile.roll_count
+	ldx #tile.C_TYPE_CAPACITY-1
+@	sta tile.age,x
+	dex
+	bpl @-
+	ldx #3
+@	sta tile.history,x
+	dex
+	bpl @-
+
+	mva #3 tile.opening_pending
+
 @	add_new_tile_to_buffer
 	dec repeat
 	bpl @-
@@ -1426,10 +1441,10 @@ data	ins 'bg2_narr/bg2_narrow.scr'
 .endp
 
 .proc	clear_next_window
-	ldx #3
+	ldx #4
 	lda #C_CHAREMPTY
 x1
-:4	sta vram+32*(6+:1)+22,x
+:5	sta vram+32*(6+:1)+22,x
 	dex
 	bpl x1
 	rts
@@ -1509,17 +1524,17 @@ x1	mva (w1),y (w2),y
 .endp
 
 .proc	store_current
-	ldx #15
+	ldx #24
 @	mva current,x store,x
 	dex
 	bpl @-
 	rts
 store	
-:16	dta 0
+:25	dta 0
 .endp
 
 .proc	restore_current
-	ldx #15
+	ldx #24
 @	mva store_current.store,x current,x
 	dex
 	bpl @-
@@ -1578,6 +1593,8 @@ x2	lda hflip
 	
 	;horizontal flip
 	lda dsize
+	cmp #24
+	jeq x6
 	cmp #8 
 	beq x4
 	cmp #3
@@ -1627,6 +1644,28 @@ x5	mva current tmp
 	mva current+3 current+2
 	mva tmp current+3
 	rts
+
+;5x5 flip
+x6	ldx #0
+flip5_row
+	lda current,x
+	sta tmp
+	lda current+4,x
+	sta current,x
+	lda tmp
+	sta current+4,x
+	lda current+1,x
+	sta tmp
+	lda current+3,x
+	sta current+1,x
+	lda tmp
+	sta current+3,x
+	txa
+	add #5
+	tax
+	cpx #25
+	bne flip5_row
+	rts
 	
 tmp	dta 0,0
 tmpx	dta 0
@@ -1649,10 +1688,12 @@ flipdata3	dta 0,3,6
 .proc	rotate_tile
 	ldx tile.type
 	lda tile.sizes,x
+	cmp #5
+	jeq rotate5
 	cmp #3
-	beq rotate3
+	jeq rotate3
 	cmp #2
-	beq rotate2
+	jeq rotate2
 
 rotate4
 ; 0123
@@ -1673,6 +1714,29 @@ rotate4
 	bpl @-
 	
 	rts
+
+rotate5
+	ldx #24
+rotate5_copy
+	lda matches5,x
+	tay
+	mva current,y robuff5,x
+	dex
+	bpl rotate5_copy
+	ldx #24
+rotate5_restore
+	mva robuff5,x current,x
+	dex
+	bpl rotate5_restore
+	rts
+
+matches5	dta 4,9,14,19,24
+	dta 3,8,13,18,23
+	dta 2,7,12,17,22
+	dta 1,6,11,16,21
+	dta 0,5,10,15,20
+robuff5
+:25	dta 0
 
 matches	dta 3,7,$b,$f
 	dta 2,6,$a,$e
@@ -1727,6 +1791,8 @@ rotate3
 
 	ldx tile.type
 	lda tile.sizes,x
+	cmp #5
+	beq draw5
 	cmp #3
 	beq draw3
 	cmp #2
@@ -1741,6 +1807,20 @@ draw4
 	dey
 	bpl @-
 	rts
+
+draw5
+	ldy #24
+draw5_loop
+	lda dr5table,y
+	tax
+	lda current,y
+	save
+	dey
+	bpl draw5_loop
+	rts
+
+dr5table
+:5	dta 0+:1*32, 1+:1*32, 2+:1*32, 3+:1*32, 4+:1*32
 
 dr4table	
 :4	dta 0+:1*32, 1+:1*32, 2+:1*32, 3+:1*32
@@ -1838,10 +1918,7 @@ clip	dta 0	;1 = use clipping (draw only on empty chars)
 	ldx #16
 @	stx tile.fullbomb_counter
 		
-x2	
-@	lda random
-	and #$0f ;no more than 16 types possible
-	a_ge tile.maxtype @-
+x2	jsr choose_tile_type
 	sta tile.type
 	lda random
 	and #$08
@@ -1850,6 +1927,212 @@ x2
 	
 	add_current_to_tile_buffer_bottom
 	rts
+
+.proc	choose_tile_type
+	lda tile.opening_pending
+	beq regular_pick
+	dec tile.opening_pending
+	jsr choose_safe_type
+	bcc regular_pick
+	sta tile.candidate
+	jsr remember_tile_type
+	lda tile.candidate
+	rts
+
+regular_pick
+	lda tile.maxtype
+	cmp #1
+	bne @+
+	mva #0 tile.candidate
+	jsr remember_tile_type
+	lda tile.candidate
+	rts
+@	mva #0 tile.roll_count
+roll_again
+	lda random
+	and #tile.C_TYPE_CAPACITY-1
+	a_ge tile.maxtype roll_failed
+	tax
+	lda tile.type_pool,x
+	sta tile.candidate
+	jsr candidate_is_blocked
+	bcs roll_failed
+	ldx tile.candidate
+	lda tile.age,x
+	a_ge #15 accept_candidate
+	clc
+	adc #1
+	sta tile.weight
+	lda random
+	and #$0f
+	a_ge tile.weight roll_failed
+
+accept_candidate
+	jsr remember_tile_type
+	lda tile.candidate
+	rts
+
+roll_failed
+	inc tile.roll_count
+	lda tile.roll_count
+	a_lt #32 roll_again
+
+	ldx #0
+fallback_pick
+	lda tile.type_pool,x
+	sta tile.candidate
+	jsr candidate_is_blocked
+	bcc accept_candidate
+	inx
+	cpx tile.maxtype
+	bne fallback_pick
+	mva #0 tile.candidate
+	jsr remember_tile_type
+	lda tile.candidate
+	rts
+
+.proc	choose_safe_type
+	mva #0 tile.safe_count
+	mva #0 tile.safe_cursor
+	mva #tile.C_SAFE_COUNT tile.safe_pool_limit
+	lda tile.opening_pending
+	beq scan_safe_count
+	mva #tile.C_COMPACT_COUNT tile.safe_pool_limit
+scan_safe_count
+	ldx tile.safe_cursor
+	lda tile.safe_pool,x
+	sta tile.candidate
+	jsr candidate_is_active
+	bcs safe_count_next
+	jsr candidate_is_blocked
+	bcs safe_count_next
+	inc tile.safe_count
+safe_count_next
+	inc tile.safe_cursor
+	lda tile.safe_cursor
+	cmp tile.safe_pool_limit
+	bne scan_safe_count
+	lda tile.safe_count
+	bne safe_count_ready
+	lda tile.safe_pool_limit
+	cmp #tile.C_SAFE_COUNT
+	beq no_safe_type
+	mva #tile.C_SAFE_COUNT tile.safe_pool_limit
+	mva #0 tile.safe_cursor
+	jmp scan_safe_count
+safe_count_ready
+safe_roll
+	lda random
+	and #$0f
+	a_ge tile.safe_count safe_roll
+	sta tile.safe_index
+	mva #0 tile.safe_cursor
+scan_safe_selection
+	ldx tile.safe_cursor
+	lda tile.safe_pool,x
+	sta tile.candidate
+	jsr candidate_is_active
+	bcs safe_selection_next
+	jsr candidate_is_blocked
+	bcs safe_selection_next
+	lda tile.safe_index
+	beq safe_type_found
+	dec tile.safe_index
+safe_selection_next
+	inc tile.safe_cursor
+	lda tile.safe_cursor
+	cmp tile.safe_pool_limit
+	bne scan_safe_selection
+	clc
+	rts
+safe_type_found
+	lda tile.candidate
+	sec
+	rts
+no_safe_type
+	clc
+	rts
+.endp
+
+.proc	candidate_is_active
+	ldx #0
+active_scan
+	x_ge tile.maxtype inactive_type
+	lda tile.type_pool,x
+	cmp tile.candidate
+	beq active_type
+	inx
+	jmp active_scan
+active_type
+	clc
+	rts
+inactive_type
+	sec
+	rts
+.endp
+
+.proc	candidate_is_blocked
+	lda tile.maxtype
+	a_lt #2 no_history
+	sub #1
+	a_lt #4 @+
+	lda #4
+@	a_lt tile.history_count @+
+	lda tile.history_count
+@	sta tile.check_count
+	ldx #0
+@	x_ge tile.check_count check_streak
+	lda tile.candidate
+	cmp tile.history,x
+	beq blocked
+	inx
+	jmp @-
+
+check_streak
+	lda tile.history_count
+	a_lt #2 allowed
+	lda tile.history
+	cmp tile.history+1
+	bne allowed
+	lda tile.candidate
+	cmp tile.history
+	beq blocked
+allowed
+	clc
+	rts
+blocked
+	sec
+	rts
+no_history
+	clc
+	rts
+.endp
+
+.proc	remember_tile_type
+	ldx #3
+@	lda tile.history-1,x
+	sta tile.history,x
+	dex
+	bne @-
+	lda tile.candidate
+	sta tile.history
+	lda tile.history_count
+	a_ge #4 @+
+	inc tile.history_count
+@	ldx #0
+@	lda tile.age,x
+	cmp #15
+	beq @+
+	inc tile.age,x
+@	inx
+	cpx #tile.C_TYPE_CAPACITY
+	bne @-
+	ldx tile.candidate
+	mva #0 tile.age,x
+	rts
+.endp
+
+.endp
 
 ;moves buffer pointers and adds current tile to the bottom of buffer
 .proc	add_current_to_tile_buffer_bottom
@@ -1903,10 +2186,15 @@ x2
 
 .local	tile
 C_BUFFSIZE	equ 6	;size of buffer
+C_TYPE_CAPACITY	equ 32	;candidate RNG supports up to 32 selectable types
 addresses
-:8		dta a(tile:1)
+:20		dta a(tile:1)
 sizes		dta 3,3,3,3,2,2,2,4
+		dta 3,3	;normal
+		dta 4,4,4,3,5,3,3,3,3,3	;hard
 dsizes		dta 9,9,9,9,4,4,4,16
+		dta 9,9	;normal
+		dta 16,16,16,9,25,9,9,9,9,9
 type		dta 1
 buffer
 :25*C_BUFFSIZE	dta " "
@@ -1914,10 +2202,31 @@ typebuff
 :C_BUFFSIZE	dta 1
 temp	
 :25		dta " "
-maxtype		dta 8	;maxtype+1
+maxtype		dta 8	;number of active types
 top_index		dta 0
 bottom_index	dta C_BUFFSIZE-1
 fullbomb_counter	dta 0
+C_SAFE_COUNT	equ 7
+C_COMPACT_COUNT	equ 3
+safe_pool	dta 4,5,6,3,1,2,0
+opening_pending	dta 0
+history_count	dta 0
+check_count	dta 0
+candidate	dta 0
+roll_count	dta 0
+weight	dta 0
+safe_count	dta 0
+safe_index	dta 0
+safe_cursor	dta 0
+safe_pool_limit	dta 0
+stage_level	dta 0
+stage_tens	dta 0
+type_pool
+:C_TYPE_CAPACITY	dta 0
+history
+:4	dta 0
+age
+:C_TYPE_CAPACITY	dta 0
 next	;next index - helps to cycle the buffer
 :C_BUFFSIZE-1	dta :1+1
 		dta 0
@@ -2016,7 +2325,69 @@ tile7	dta "    "
 	dta "#XX#"
 	dta "    "
 	dta "    "
-		
+	
+;additional tiles in normal mode after stage 25
+;3x3
+tile8	dta " # "
+	dta "#X#"
+	dta " # "
+
+tile9	dta "  #"
+	dta "#XX"
+	dta "  #"
+	
+;additional tiles in HARD mode after some stages are done:
+;stage 10
+;4x4
+tile10	dta "    "
+	dta "  ##"
+	dta "#X# "
+	dta "    "
+
+tile11	dta "    "
+	dta "#XX#"
+	dta "  # "
+	dta "    "
+;stage20
+tile12	dta "    "
+	dta "#XX#"
+	dta "#   "
+	dta "    "
+
+tile13	dta "#X#"
+	dta "## "
+	dta "   "
+;5x5
+tile14	dta "     "
+	dta "     "
+	dta "#XXX#"
+	dta "     "
+	dta "     "
+
+;stage25
+;3x3
+tile15	dta "#X#"
+	dta "X  "
+	dta "#  "
+;stage40
+;3x3
+tile16	dta "  #"
+	dta " ##"
+	dta "## "
+;also tile8,9 are here from stage 40	
+
+tile17	dta "# #"
+	dta "#X#"
+	dta "   "
+	
+tile18	dta "#  "
+	dta "#X#"
+	dta "  #"
+
+tile19	dta "#  "
+	dta "#X#"
+	dta " # "
+	
 	dta $ff
 	
 ;switches # -> charbrick
@@ -2124,7 +2495,12 @@ stage	equ vram+32*17+26 ;last char
 .proc	reset_stage
 	mva #0 stageno+2
 	sta stageno+1
-	mva title_g2f.joy_control.item+1 stageno	;hundreds based on the set selected
+	mva title_g2f.joy_control.item+2 stageno	;hundreds based on the set selected
+	ift debug_start_stage > 0
+	mva #debug_start_stage/10 stageno+1
+	mva #debug_start_stage%10 stageno+2
+	mva #1 load_stage.force_unpack
+	eif
 	rts
 .endp
 
@@ -2154,6 +2530,95 @@ stage	equ vram+32*17+26 ;last char
 @	;write on screen
 	lda #0
 	write_stage
+	rts
+.endp
+
+.proc	configure_tile_pool
+	lda stageno+1
+	asl @
+	sta tile.stage_tens
+	asl @
+	asl @
+	add tile.stage_tens
+	add stageno+2
+	sta tile.stage_level
+
+	ldx #0
+base_pool
+	txa
+	sta tile.type_pool,x
+	inx
+	cpx #8
+	bne base_pool
+	stx tile.maxtype
+
+	lda title_g2f.joy_control.item+1
+	cmp #1
+	beq normal_mode
+	cmp #2
+	beq hard_mode
+	rts
+
+normal_mode
+	lda tile.stage_level
+	a_lt #25 pool_ready
+	ldx tile.maxtype
+	mva #8 tile.type_pool,x
+	inx
+	mva #9 tile.type_pool,x
+	inx
+	stx tile.maxtype
+	rts
+
+hard_mode
+	lda tile.stage_level
+	a_lt #10 hard_stage20
+	ldx tile.maxtype
+	mva #10 tile.type_pool,x
+	inx
+	mva #11 tile.type_pool,x
+	inx
+	stx tile.maxtype
+
+hard_stage20
+	lda tile.stage_level
+	a_lt #20 hard_stage25
+	ldx tile.maxtype
+	mva #12 tile.type_pool,x
+	inx
+	mva #13 tile.type_pool,x
+	inx
+	mva #14 tile.type_pool,x
+	inx
+	stx tile.maxtype
+
+hard_stage25
+	lda tile.stage_level
+	a_lt #25 hard_stage40
+	ldx tile.maxtype
+	mva #15 tile.type_pool,x
+	inx
+	stx tile.maxtype
+
+hard_stage40
+	lda tile.stage_level
+	a_lt #40 pool_ready
+	ldx tile.maxtype
+	mva #16 tile.type_pool,x
+	inx
+	mva #17 tile.type_pool,x
+	inx
+	mva #18 tile.type_pool,x
+	inx
+	mva #19 tile.type_pool,x
+	inx
+	mva #8 tile.type_pool,x
+	inx
+	mva #9 tile.type_pool,x
+	inx
+	stx tile.maxtype
+
+pool_ready
 	rts
 .endp
 
@@ -2676,6 +3141,7 @@ x1	sta (w1),y
 	fill_playfield
 	clear_next_window
 	inc_stage
+	configure_tile_pool
 	add_gscore
 	reset_score
 	;mva #C_CHAREMPTY fill_playfield.character
@@ -2725,7 +3191,12 @@ text	dta d"        "
 ;load stage based on stageno
 .proc	load_stage
 	lda stageno+2
-	bne justpick
+	beq load_ten_stages
+	lda force_unpack
+	beq justpick
+
+load_ten_stages
+	mva #0 force_unpack
 	;do the actual loading
 	lda stageno
 	asl @
@@ -2782,6 +3253,7 @@ x3	dex
 ;	jmp x5
 	
 noanim	dta 0
+force_unpack	dta 0
 stages	
 :10	dta a(tenstage+:1*220)
 .endp
