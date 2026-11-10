@@ -3,8 +3,9 @@
 /*  Mode: DLI (char mode)              */
 /***************************************/
 	.ifndef integrated
-integrated = 0
+	integrated = 0
 	eif
+	
 	icl "dtnx_pg.h"
 	ift integrated == 1
 begin
@@ -570,6 +571,23 @@ mlef	dta 0
 mrig	dta 0,14,13,13,0
 rpt	dta 0
 .endp
+
+;X param: 0=left title(last), 1=right title(high)
+.proc	write_stage
+	cpx #0
+	beq @+
+	ldx #33-7	;shift to the right number
+@	
+	ldy #2
+@	lda stageno,y
+	add #$40
+	sta texts2026+40*8+7,x
+	dey
+	bpl @-
+	rts
+stageno 	dta 2,2,2
+.endp
+
 ; ---
 
 	ift integrated == 0

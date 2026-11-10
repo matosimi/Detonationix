@@ -258,7 +258,6 @@ title	pause 2
 	game_init
 	rmt.init
 	draw_background
-	mva #0 stageno
 	
 	convert_tiles
 	
@@ -266,17 +265,21 @@ title	pause 2
 	draw_playfield
 	
 	reset_stage
+	write_stage
 	reset_score
 	reset_gscore
 
+	mva #1 load_stage.noanim
+	load_stage
+	mva #0 load_stage.noanim
+	
 	;turn on the screen
 	vcount_wait_for_0
 	mva #$c0 nmien 
 	pause 0
 	mva #32+1+12+16 dmactl
 	
-
-	load_stage
+	
 	init_tile_buffer
 	
 	jsr next_tile.first
@@ -1485,10 +1488,6 @@ x1	mva (w1),y (w2),y
 @	mva (w1),y (w2),y
 	dey
 	bpl @-
-	
-	mva #1 load_stage.noanim
-	load_stage
-	mva #0 load_stage.noanim
 	rts
 .endp
 
@@ -2123,9 +2122,19 @@ stage	equ vram+32*17+26 ;last char
 .endp
 
 .proc	reset_stage
-	lda #"1"* 
-	sta stage
-	mva #0 stageno ;zero based stage number
+	mva #0 stageno+2
+	sta stageno+1
+	mva title_g2f.joy_control.item+1 stageno	;hundreds based on the set selected
+	rts
+.endp
+
+.proc	write_stage
+	ldy #2
+@	lda stageno,y
+	add #"0"*
+	sta stage-2,y
+	dey
+	bpl @-
 	rts
 .endp
 
@@ -2137,15 +2146,14 @@ stage	equ vram+32*17+26 ;last char
 
 .proc	inc_stage
 	inc stageno+2	;number form
-	inc stage		;char form
-	lda stage
-	a_ge #"9"*+1 x1
-	rts
-x1	mva #"0"* stage
-	inc stage-1
-	lda stage-1
-	ora #$90
-	sta stage-1 
+	lda stageno+2
+	a_lt #10 @+
+	inc stageno+1
+	mva #0 stageno+2
+
+@	;write on screen
+	lda #0
+	write_stage
 	rts
 .endp
 
