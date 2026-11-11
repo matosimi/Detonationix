@@ -312,7 +312,8 @@ loop	lda gover
 	beq x1
 	;game over sequence
 	game_over
-	trigger_push_release
+	lda gover
+	beq x1
 	jmp title
 x1	lda leveldone
 	bne x2
@@ -1912,11 +1913,56 @@ clip	dta 0	;1 = use clipping (draw only on empty chars)
 	dec tile.fullbomb_counter
 	bpl x2
 	
-	ldx #8	;fullbomb every 8 tiles (stage 4->x)
+	lda title_g2f.joy_control.item+1
+	cmp #2
+	beq hard_fullbomb
+	cmp #1
+	beq normal_fullbomb
+
+	;Keep the existing Easy-mode cadence.
 	lda stage
-	a_ge #4 @+
+	a_ge #4 easy_fullbomb_8
 	ldx #16
-@	stx tile.fullbomb_counter
+	jmp set_fullbomb_counter
+easy_fullbomb_8
+	ldx #8
+	jmp set_fullbomb_counter
+
+normal_fullbomb
+	lda tile.stage_level
+	a_ge #70 normal_fullbomb_17
+	a_ge #50 normal_fullbomb_12
+	a_ge #20 normal_fullbomb_9
+	ldx #7	;8 pieces
+	jmp set_fullbomb_counter
+normal_fullbomb_9
+	ldx #8	;9 pieces
+	jmp set_fullbomb_counter
+normal_fullbomb_12
+	ldx #11	;12 pieces
+	jmp set_fullbomb_counter
+normal_fullbomb_17
+	ldx #15	;17 pieces
+	jmp set_fullbomb_counter
+
+hard_fullbomb
+	lda tile.stage_level
+	a_ge #70 hard_fullbomb_21
+	a_ge #50 hard_fullbomb_15
+	a_ge #20 hard_fullbomb_10
+	ldx #7	;8 pieces
+	jmp set_fullbomb_counter
+hard_fullbomb_10
+	ldx #9	;10 pieces
+	jmp set_fullbomb_counter
+hard_fullbomb_15
+	ldx #14	;15 pieces
+	jmp set_fullbomb_counter
+hard_fullbomb_21
+	ldx #20	;21 pieces
+
+set_fullbomb_counter
+	stx tile.fullbomb_counter
 		
 x2	jsr choose_tile_type
 	sta tile.type
@@ -2736,7 +2782,7 @@ x1	dex
 	dec gravtick
 	jmp x2
 */	
-gameover	mva #"0"* score+1,x
+gameover	mva #"0"* score+5
 	mva #1 gover
 	rts	
 .endp
@@ -3277,13 +3323,182 @@ x3	mva text,x (w1),y
 	tax
 	dec lines
 	bne x4
-	
+
+	ldx #9
+game_over_continue_text
+	lda continue_text,x
+	sta vram+32*17+5,x
+	lda #$00
+	sta vram+32*16+5,x
+	sta vram+32*18+5,x
+	sta vram+32*19+5,x
+	dex
+	bpl game_over_continue_text
+	mva #9 seconds_left
+	mva #0 frame_count
+
+game_over_wait_release
+	lda trig0
+	beq game_over_wait_release
+	lda 20
+	sta last_frame
+
+game_over_wait
+	lda trig0
+	jeq game_over_continue
+	lda 20
+	cmp last_frame
+	beq game_over_wait
+	sta last_frame
+	inc frame_count
+	lda ntsc
+	beq game_over_pal
+	lda frame_count
+	cmp #60
+	bne game_over_wait
+	jmp game_over_second
+game_over_pal
+	lda frame_count
+	cmp #50
+	bne game_over_wait
+
+game_over_second
+	mva #0 frame_count
+	dec seconds_left
+	lda seconds_left
+	bmi game_over_expired
+	add #1
+	adc #"0"*
+	sta vram+32*18+9
+	jmp game_over_wait
+
+game_over_expired
+	ldx #9
+@	lda #C_CHARBRICK
+:5	sta vram+32*15+5+#*32,x
+	dex
+	bpl @-
+	trigger_push_release
 	rts
+
+game_over_continue
+	lda trig0
+	beq game_over_continue
+	subtract_continue_penalty
+	reset_score
+	ldx #9
+@
+	lda m100,x
+	sta vram+32*18+5,x
+	lda #$00
+	sta vram+32*17+5,x
+	dex
+	bpl @-
+	pause 20
+	mva #0 load_stage.noanim ;do the animation
+	load_stage
+	init_tile_buffer
+	jsr next_tile.first
+	form_megabomb
+	pause 10
+	next_tile
+	mva #0 gover
+	mva #1 leveldone
+	rts
+
 lines	dta 4	
 text	dta d"      "
 	dta d" GAME "
 	dta d" OVER "
 	dta d"      "
+continue_text	dta d"CONTINUE ?"
+m100		dta d"  -100    "
+seconds_left	dta 0
+frame_count	dta 0
+last_frame	dta 0
+.endp
+
+.proc	subtract_continue_penalty
+	lda gscore
+	and #$0f
+	bne subtract_hundreds
+	lda gscore+1
+	and #$0f
+	bne subtract_hundreds
+	lda gscore+2
+	and #$0f
+	bne subtract_hundreds
+	lda gscore+3
+	and #$0f
+	a_ge #1 subtract_hundreds
+
+	ldx #5
+	lda #"0"*
+subtract_clear_score
+	sta gscore,x
+	dex
+	bpl subtract_clear_score
+	jmp subtract_penalty_done
+
+subtract_hundreds
+	lda gscore+3
+	and #$0f
+	a_ge #1 subtract_without_borrow
+	sub #1
+	add #10
+	ora #$90
+	sta gscore+3
+	ldx #2
+subtract_borrow
+	lda gscore,x
+	and #$0f
+	beq subtract_borrow_zero
+	sub #1
+	ora #$90
+	sta gscore,x
+	jmp subtract_penalty_done
+subtract_borrow_zero
+	mva #"9"* gscore,x
+	dex
+	bpl subtract_borrow
+	jmp subtract_penalty_done
+
+subtract_without_borrow
+	sub #1
+	ora #$90
+	sta gscore+3
+
+subtract_penalty_done
+	rewrite_grand_score
+	rts
+.endp
+
+.proc	rewrite_grand_score
+	mva #0 started
+	ldx #0
+rewrite_score_digit
+	lda gscore,x
+	and #$0f
+	sta digit
+	bne write_score_digit
+	lda started
+	bne write_score_digit
+	cpx #5
+	beq write_score_digit
+	mva #" "* gscore,x
+	jmp next_score_digit
+write_score_digit
+	mva #1 started
+	lda digit
+	ora #$90
+	sta gscore,x
+next_score_digit
+	inx
+	cpx #6
+	bne rewrite_score_digit
+	rts
+started	dta 0
+digit	dta 0
 .endp
 
 ;sets leveldone=0 if level is done (bottom line empty)
