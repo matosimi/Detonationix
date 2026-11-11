@@ -96,12 +96,24 @@ C_LINES		equ 23		;zero based (24 together)
 C_TOP_LINE	equ 5		;top-left corner of playfield
 C_BOTTOM_LINE	equ C_LINES*32+5	;bottom-left corner of playfield
 
+;Gravity tuning: start interval, decrease per stage interval, and floor.
+C_GRAVITY_STAGE_INTERVAL	equ 10
+C_GRAVITY_EASY_START	equ 50
+C_GRAVITY_EASY_STEP	equ 2
+C_GRAVITY_EASY_FLOOR	equ 30
+C_GRAVITY_NORMAL_START	equ 45
+C_GRAVITY_NORMAL_STEP	equ 3
+C_GRAVITY_NORMAL_FLOOR	equ 22
+C_GRAVITY_HARD_START	equ 40
+C_GRAVITY_HARD_STEP	equ 4
+C_GRAVITY_HARD_FLOOR	equ 15
+
 debug_no_music	equ 1
 debug_skip_title	equ 0
 debug_vram_flicker	equ 0
 debug_gravity	equ 0
 debug_tiledemo	equ 0
-debug_start_stage	equ 49	;0=off, 1-99 within selected stage set
+debug_start_stage	equ 97	;0=off, 1-99 within selected stage set
 
 	org code
 .local	init
@@ -267,6 +279,7 @@ title	pause 2
 	
 	reset_stage
 	configure_tile_pool
+	configure_gravity
 	write_stage
 	reset_score
 	reset_gscore
@@ -297,7 +310,6 @@ title	pause 2
 	mva #$0f controls.stick_prev	;initialize stick state (all released)
 	mva #5 speed	;controls responsiveness
 	sta leveldone
-	mva #40 gravtick	;gravity speed
 	
 	;mva #4+4 xpos
 	;mva #0 ypos 
@@ -2606,8 +2618,6 @@ base_pool
 	rts
 
 normal_mode
-	lda tile.stage_level
-	a_lt #25 pool_ready
 	ldx tile.maxtype
 	mva #8 tile.type_pool,x
 	inx
@@ -2666,6 +2676,62 @@ hard_stage40
 
 pool_ready
 	rts
+.endp
+
+.proc	configure_gravity
+	lda title_g2f.joy_control.item+1
+	cmp #1
+	beq gravity_normal
+	cmp #2
+	beq gravity_hard
+	mva #C_GRAVITY_EASY_START gravtick
+	mva #C_GRAVITY_EASY_STEP gravity_step
+	mva #C_GRAVITY_EASY_FLOOR gravity_floor
+	jmp gravity_count_stages
+
+gravity_normal
+	mva #C_GRAVITY_NORMAL_START gravtick
+	mva #C_GRAVITY_NORMAL_STEP gravity_step
+	mva #C_GRAVITY_NORMAL_FLOOR gravity_floor
+	jmp gravity_count_stages
+
+gravity_hard
+	mva #C_GRAVITY_HARD_START gravtick
+	mva #C_GRAVITY_HARD_STEP gravity_step
+	mva #C_GRAVITY_HARD_FLOOR gravity_floor
+
+gravity_count_stages
+	lda tile.stage_level
+	ldx #0
+gravity_count_loop
+	a_lt #C_GRAVITY_STAGE_INTERVAL gravity_apply
+	sub #C_GRAVITY_STAGE_INTERVAL
+	inx
+	jmp gravity_count_loop
+
+gravity_apply
+	cpx #0
+	beq gravity_done
+gravity_ramp_loop
+	lda gravity_floor
+	add gravity_step
+	sta gravity_limit
+	lda gravtick
+	a_lt gravity_limit gravity_clamp
+	sub gravity_step
+	sta gravtick
+	jmp gravity_next_step
+gravity_clamp
+	mva gravity_floor gravtick
+gravity_next_step
+	dex
+	bne gravity_ramp_loop
+gravity_done
+	rts
+
+gravity_step	dta 0
+gravity_floor	dta 0
+gravity_limit	dta 0
 .endp
 
 .macro	add_score_megabomb ;just +1
@@ -3188,6 +3254,7 @@ x1	sta (w1),y
 	clear_next_window
 	inc_stage
 	configure_tile_pool
+	configure_gravity
 	add_gscore
 	reset_score
 	;mva #C_CHAREMPTY fill_playfield.character
@@ -3199,9 +3266,6 @@ x1	sta (w1),y
 	pause 10
 	next_tile
 	
-	lda #40		;lowest game speed
-	sub stageno	;sub stage number
-	sta gravtick 	;speed up game every stage
 	rts
 winner
 	mva #C_CHARDETONATION fill_playfield.character
