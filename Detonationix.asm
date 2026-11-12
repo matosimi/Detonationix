@@ -108,6 +108,7 @@ C_GRAVITY_HARD_START	equ 40
 C_GRAVITY_HARD_STEP	equ 4
 C_GRAVITY_HARD_FLOOR	equ 15
 
+debug_max_blast_size	equ 0
 debug_no_music	equ 1
 debug_skip_title	equ 0
 debug_vram_flicker	equ 0
@@ -439,13 +440,13 @@ ypath2	dta -1,-1,-1,-1, 9, 8, 7, 6,-1,-1,-1,-1,-1,-1,-1
 
 .proc	place_tile
 	draw_current_tile
-	mva #1 detonate_bombs.consequent_detonation	;set to 1st run
+	mva #0 detonate_bombs.consequent_detonation	;chain depth for this placement
 linesloop
 	count_full_lines
 	lda bomb_buffer_index2
 	beq x1
-	animate_full_lines
 	add_score
+	animate_full_lines
 	copy_bomb_buffer
 	detonate_bombs
 	segmentation
@@ -583,7 +584,6 @@ x1	mva #C_CHARBOMBMARK (w1),y	;mark bomb that is detonating
 	jmp x3
 	
 megabomb	mark_megabomb
-	add_score_megabomb	
 	jmp x3	
 
 .endp
@@ -679,12 +679,21 @@ bomb_buffer_index2	dta 0
 ;and detonate after clear
 	ldy bomb_buffer_index
 	jeq x0	;nothing to detonate
-	ldx count_full_lines.count ;size of detonation
-	lda consequent_detonation
-	beq @+
-	dex
-@	mva blast_width,x wblast 
+	lda count_full_lines.count
+	add consequent_detonation
+	a_ge #10 blast_size_max
+	sub #1
+	tax
+	jmp blast_size_ready
+blast_size_max
+	ldx #9
+blast_size_ready
+	mva blast_width,x wblast 
 	mva blast_height,x hblast
+	ift debug_max_blast_size == 1
+	mva #15 wblast
+	sta hblast
+	eif
 loop3	copy_vram
 	
 loop2	mva #0 change	;reset change
@@ -750,12 +759,6 @@ x00	pause 1
 	add16 #64+5 w1
 	add16 #64+5 w2
 
-;copy score from vram to vram2 (could be changed by megabomb detonations)
-	ldy #5
-@	mva score,y score_v2,y
-	dey
-	bpl @-
-	
 clear_loop	;clear playfield after detonations
 	ldy #31
 @	mva (w2),y (w1),y
@@ -794,7 +797,9 @@ clear	mva #C_CHAREMPTY (w1),y
 	copy_bomb_buffer
 	lda bomb_buffer_index
 	jne loop3
-	mva #0 consequent_detonation	;set flag for +1 detonation size in next loops
+	lda consequent_detonation
+	a_ge #9 x0
+	inc consequent_detonation
 x0	rts
 
 ;code fork for megabomb that has 10x8 blast
@@ -803,7 +808,11 @@ megabomb
 	sta w1+1
 	
 	lda blast_size_buffer,y
+	ift debug_max_blast_size == 1
+	a_ge #15 x0
+	els
 	a_ge #10 x0	;width is dominant so if blast width == 10 (megablast)
+	eif
 			;then it is final for this one
 	;grow blast width
 	add #2
@@ -811,7 +820,11 @@ megabomb
 	inc change
 			
 @	lda blast_size_buffer+1,y
+	ift debug_max_blast_size == 1
+	a_ge #15 x0
+	els
 	a_ge #8 x0
+	eif
 	;grow blast height
 	add #2
 	sta blast_size_buffer+1,y
@@ -834,13 +847,11 @@ change	dta 0	;>1 some change to blast has been made
 bomb_buffer_iterator	dta 0
 
 blast_width
-	dta 7,7,7,7,8,11,11,13,13
-:10	dta 15
+	dta 7,7,7,7,8,11,12,13,13,15
 
 blast_height
-	dta 1,3,5,7,9,11,11,13,13
-:10	dta 15
-consequent_detonation	dta 1
+	dta 1,3,5,7,9,11,11,13,15,15
+consequent_detonation	dta 0
 .endp
 
 ;check if megabomb should be formed and if so do it
@@ -887,6 +898,7 @@ check2x2	sty tmpy
 	dey
 	mva #C_CHARMEGA (w1),y
 	pause 5
+	add_score_megabomb
 	rts
 	
 	
@@ -937,10 +949,45 @@ ystor	dta 0
 ;w1=contains center, x,y=width,height
 .proc	draw_blast
 	stx width
+	mwa w1 center_ptr
+	lda w1
+	and #$1f
+	sta center_x
+	mva #0 clip_left
 	txa
 	lsr @
-	sta subx 
+	sta subx
+	lda center_x
+	a_ge subx blast_left_inside
+	lda subx
+	sub center_x
+	sta clip_amount
+	lda width
+	sub clip_amount
+	sta draw_width
+	mwa center_ptr w1
+	sub16 center_x w1
+	mva #0 left_x
+	mva #1 clip_left
+	jmp blast_clip_right
+blast_left_inside
+	lda center_x
+	sub subx
+	sta left_x
+	mva width draw_width
 	sub16 subx w1 ;subtract half of the width -> set left edge
+blast_clip_right
+	lda left_x
+	add draw_width
+	a_ge #32 blast_clip_right_edge
+	jmp blast_width_ready
+blast_clip_right_edge
+	sub #32
+	sta clip_amount
+	lda draw_width
+	sub clip_amount
+	sta draw_width
+blast_width_ready
 	cpy #1
 	jeq flat_blast
 ;rectangular blast
@@ -1003,7 +1050,10 @@ flat_blast
 	jsr set_blast_line_type
 	
 draw_blast_line	
-	ldy width
+	lda w1+1
+	a_lt >vram blast_line_done
+	a_ge >vram2 blast_line_done
+	ldy draw_width
 	dey
 	lda (w1),y
 	cmp #C_CHARBOMB
@@ -1012,7 +1062,6 @@ draw_blast_line
 	jmp @+1
 @	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
-	add_score_megabomb
 @	lda #$42 ;right piece
 ptr3	equ *-1
 	sta (w1),y 
@@ -1025,7 +1074,6 @@ midloop	lda (w1),y
 	jmp @+1
 @	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
-	add_score_megabomb	
 @	lda #$41 ;middle piece
 ptr2	equ *-1
 	sta (w1),y
@@ -1040,15 +1088,27 @@ ptr2	equ *-1
 	jmp @+1
 @	a_out2 #C_CHARMEGA #C_CHARMEGA+3 @+
 	mark_megabomb
-	add_score_megabomb
+@	lda clip_left
+	beq @+
+	lda ptr2
+	sta ptr1
 @	lda #$40 ;left piece
 ptr1	equ *-1
 	sta (w1),y 
+	rts
+
+blast_line_done
 	rts
 	
 subx	dta 0
 suby	dta 0
 width	dta 0
+draw_width	dta 0
+center_ptr	dta 0,0
+center_x	dta 0
+left_x	dta 0
+clip_amount	dta 0
+clip_left	dta 0
 w1tmp	dta 0,0
 repeat	dta 0
 
@@ -2539,7 +2599,6 @@ texts	dta "   CREATED BY MARTIN SIMECEK    "
 */
 
 score	equ vram+32*14+21 ;leftmost char
-score_v2	equ vram2+32*14+21 ;leftomost char score vram2
 gscore 	equ vram+32*21+21 ;leftmost char
 stage	equ vram+32*17+26 ;last char
 
@@ -2810,10 +2869,20 @@ x2	sta score,x
 	
 x1	a_ge #"9"*+1 @+	;needs shifting
 	jmp x2
-@	inc score-1,x
+@	cpx #0
+	beq score_max
+	inc score-1,x
 	sub #10
 	a_ge #"9"*+1 @-
 	jmp x2
+
+score_max
+	ldx #5
+	lda #"9"*
+@	sta score,x
+	dex
+	bpl @-
+	rts
 
 bonus	dta 0,0,0,0,0,0
 megabomb	dta 0
@@ -2896,6 +2965,8 @@ x6	inx
 x0	rts
 	
 x1	sub #10
+	cpx #0
+	beq grand_score_max
 	ora #$90
 	sta gscore,x
 	dex
@@ -2906,6 +2977,13 @@ x1	sub #10
 x3	inc gscore,x
 	jmp x2
 
+grand_score_max
+	ldx #5
+	lda #"9"*
+@	sta gscore,x
+	dex
+	bpl @-
+	rts
 .endp
 
 .proc	switch_vram

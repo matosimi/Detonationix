@@ -638,14 +638,14 @@ do_update
 	;store last to high:
 	ldx #0
 	ldy score_offset
-@	mva score_last,x score_high,y
+@	mva score_last,y score_high,y
 	iny
 	inx
 	cpx #6
 	bne @-
 	ldx #0
 	ldy mxstage_offset
-@	mva mxstage_last,x mxstage_high,y
+@	mva mxstage_last,y mxstage_high,y
 	iny
 	inx
 	cpx #3
@@ -681,9 +681,9 @@ mxstage_offset	dta 0
 	;last score
 	mwa #texts2026+5*40+1 w1	;target score
 	ldx score_offset
-	mva #5 count
+	mva #4 count
 	ldy #0
-@	lda score_last,x
+@	lda score_last+1,x
 	render_digit
 	inx
 	dec count
@@ -691,9 +691,9 @@ mxstage_offset	dta 0
 	
 	;high score
 	ldx score_offset
-	mva #5 count
-	ldy #26
-@	lda score_high,x
+	mva #4 count
+	ldy #28
+@	lda score_high+1,x
 	render_digit
 	inx
 	dec count
@@ -715,7 +715,7 @@ mxstage_offset	dta 0
 	ldy #0
 @	lda mxstage_high,x
 	ora #$20
-	sta texts2026+7*40+33,y
+	sta texts2026+7*40+35,y
 	inx
 	iny
 	cpy #3
@@ -764,10 +764,10 @@ score_high
 :9	dta 0,0,0,0,0,0
 
 mxstage_high
-:9	dta 0,0,0
+:9	dta #/3,0,0
 
 mxstage_last
-:9	dta 0,0,0
+:9	dta #/3,0,0
 .endl
 
 	ift integrated == 0
