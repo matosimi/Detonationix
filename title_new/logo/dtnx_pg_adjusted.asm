@@ -4,6 +4,8 @@
 /***************************************/
 	.ifndef integrated
 	integrated = 0
+w1	equ $a4
+w1	equ $a4
 	eif
 	
 	icl "dtnx_pg.h"
@@ -81,7 +83,8 @@ main
 	sta dmactl
 	mva #$fe portb		;switch off ROM to get 16k more ram
 
-	;todo: draw_bigscore
+	scoreboard.update
+	scoreboard.render
 
 	mwa #NMI $fffa		;new NMI handler
 
@@ -536,6 +539,8 @@ pmleft	ldy #5
 	bpl @-
 	dec item
 	mva item item,x
+	scoreboard.calc_offsets
+	scoreboard.render
 	jsr delay
 	rts
 	
@@ -555,6 +560,8 @@ pmright	ldy #5
 	bpl @-
 	inc item
 	mva item item,x
+	scoreboard.calc_offsets
+	scoreboard.render
 	jsr delay
 	rts
 	
@@ -589,6 +596,179 @@ stageno 	dta 2,2,2
 .endp
 
 ; ---
+
+.local	scoreboard
+
+;takes score_new&mxstage_new and store to appropriate *_last
+;performs comparison against high and update if last >= high
+.proc	update
+	calc_offsets
+	;update last score:
+	ldx #0
+	ldy score_offset
+@	mva score_new,x score_last,y
+	iny
+	inx
+	cpx #6
+	bne @-
+	;update last stage:
+	ldx #0
+	ldy mxstage_offset
+@	mva mxstage_new,x mxstage_last,y
+	iny
+	inx
+	cpx #3
+	bne @-
+	
+	;compare the scores
+	ldx #0
+	ldy score_offset
+@	lda score_high,y
+	a_lt score_last,y do_update
+	bne noupdate
+	;equals -> next
+	iny
+	inx
+	cpx #6
+	bne @-
+	;if score is the same, we dont update mxstage number
+noupdate	rts
+
+do_update
+	;store last to high:
+	ldx #0
+	ldy score_offset
+@	mva score_last,x score_high,y
+	iny
+	inx
+	cpx #6
+	bne @-
+	ldx #0
+	ldy mxstage_offset
+@	mva mxstage_last,x mxstage_high,y
+	iny
+	inx
+	cpx #3
+	bne @-
+	rts
+.endp
+
+.proc	calc_offsets
+	;records are grouped by set, with three difficulties per set
+	lda joy_control.item+2 ;set
+	asl @
+	add joy_control.item+2
+	add joy_control.item+1 ;difficulty
+	sta set_offset
+	 asl @
+	sta score_offset
+	 asl @
+	add score_offset
+	sta score_offset
+	lda set_offset
+	asl @
+	add set_offset
+	sta mxstage_offset
+	rts
+.endp
+
+set_offset 	dta 0
+score_offset	dta 0
+mxstage_offset	dta 0
+
+;renders last score/stage and high score/stage on the title screen
+.proc	render
+	;last score
+	mwa #texts2026+5*40+1 w1	;target score
+	ldx score_offset
+	mva #5 count
+	ldy #0
+@	lda score_last,x
+	render_digit
+	inx
+	dec count
+	bpl @-
+	
+	;high score
+	ldx score_offset
+	mva #5 count
+	ldy #26
+@	lda score_high,x
+	render_digit
+	inx
+	dec count
+	bpl @-
+	
+	;mxstage last
+	ldx mxstage_offset
+	ldy #0
+@	lda mxstage_last,x
+	ora #$20
+	sta texts2026+7*40+7,y
+	inx
+	iny
+	cpy #3
+	bne @-
+	
+	;mxstage high
+	ldx mxstage_offset
+	ldy #0
+@	lda mxstage_high,x
+	ora #$20
+	sta texts2026+7*40+33,y
+	inx
+	iny
+	cpy #3
+	bne @-
+	
+	rts
+count	dta 0
+.endp
+
+.proc	render_digit
+	asl @
+	add #10
+	sta (w1),y
+	iny
+	add #1
+	sta (w1),y
+	sty ytmp
+	add #31
+	sta char
+	tya
+	add #39
+	tay
+	lda char
+	sta (w1),y
+	iny
+	add #1
+	sta (w1),y
+	ldy ytmp
+	iny	;w1+y points to the next digit
+	rts
+char	dta 0
+ytmp	dta 0
+.endp
+
+score_new
+	dta 0,0,0,0,0,0
+mxstage_new
+	dta 0,0,0
+
+;blast: easy,normal,hard
+;chaos: easy,normal,hard
+;order: easy,normal,hard
+score_last
+:9	dta 0,0,0,0,0,0
+score_high	
+:9	dta 0,0,0,0,0,0
+
+mxstage_high
+:9	dta 0,0,0
+
+mxstage_last
+:9	dta 0,0,0
+.endl
 
 	ift integrated == 0
 	run main

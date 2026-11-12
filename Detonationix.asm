@@ -113,7 +113,7 @@ debug_skip_title	equ 0
 debug_vram_flicker	equ 0
 debug_gravity	equ 0
 debug_tiledemo	equ 0
-debug_start_stage	equ 97	;0=off, 1-99 within selected stage set
+debug_start_stage	equ 0	;0=off, 1-99 within selected stage set
 
 	org code
 .local	init
@@ -2572,6 +2572,22 @@ stage	equ vram+32*17+26 ;last char
 	rts
 .endp
 
+.proc	save_title_score
+	ldx #5
+@	lda gscore,x
+	and #$0f
+	sta title_g2f.scoreboard.score_new,x
+	dex
+	bpl @-
+	ldx #2
+@	lda stageno,x
+	sta title_g2f.scoreboard.mxstage_new,x
+	dex
+	bpl @-
+	rts
+.endp
+
+
 .proc	reset_gscore
 	lda #"0"* 
 	sta gscore+5
@@ -3290,6 +3306,7 @@ x3	mva text,x (w1),y
 	bne x4
 	
 	mva #1 gwin
+	save_title_score
 	trigger_push_release	
 	rts
 lines	dta 3	
@@ -3442,6 +3459,7 @@ game_over_expired
 :5	sta vram+32*15+5+#*32,x
 	dex
 	bpl @-
+	save_title_score
 	trigger_push_release
 	rts
 
