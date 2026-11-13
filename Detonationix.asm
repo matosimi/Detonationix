@@ -127,7 +127,6 @@ debug_start_stage	equ 0	;0=off, 1-99 within selected stage set
 	dex
 	bpl @- 
 	jmp ntsc_cont
-	
 pal	ldx #8
 @	mva icolors,x $2c0,x
 	dex
@@ -388,7 +387,7 @@ cloop	controls
 @	dey
 	dex
 	bpl @-1 
-;test end	
+;test end
 no_make_fullbomb
 loop	ldx tile.top_index
 	lda tile.next,x
@@ -399,7 +398,7 @@ loop	ldx tile.top_index
 	vcount_wait_for_0
 	;mva #$0f colpf0+4
 	draw_current_tile	;draw next tile
-	
+
 	ldx step
 	lda ypath2,x
 	bmi go_delete
@@ -412,7 +411,7 @@ loop	ldx tile.top_index
 	lda tile.next,x
 	load_tile_to_current
 	draw_current_tile	;draw next-next tile
-	
+
 go_delete
 	;pause 5
 	wait_vcount_lt #$4d ;wait until below the half of PAL screen
@@ -424,7 +423,7 @@ go_delete
 	mva xpath,x xpos
 	mva ypath,x ypos
 	delete_current_tile	;delete next tile
-	
+
 	ldx step
 	lda ypath2,x
 	bmi go_next_frame	;skip delete if not drawn
@@ -439,13 +438,13 @@ go_delete
 	lda tile.next,x
 	load_tile_to_current
 	delete_current_tile	;delete next-next tile
-	
-go_next_frame	
+
+go_next_frame
 	inc step
 	ldx step
 	cpx #C_LENGTH
 	jne loop
-	
+
 	mva #0 save.clip
 	rts
 ;(22,6) -> (8,0)
@@ -457,6 +456,8 @@ ypath2	dta -1,-1,-1,-1, 9, 8, 7, 6,-1,-1,-1,-1,-1,-1,-1
 .endp
 
 .proc	place_tile
+	ldx tile.type
+	inc tile.placed_count,x
 	draw_current_tile
 	mva #0 detonate_bombs.consequent_detonation	;chain depth for this placement
 linesloop
@@ -1398,12 +1399,7 @@ right_first_repeat	dta 0	;flag: 1 if first repeat pending, 0 if subsequent
 	mva #-1 tile.fullbomb_counter
 	mva #0 tile.history_count
 	sta tile.opening_pending
-	sta tile.roll_count
-	ldx #tile.C_TYPE_CAPACITY-1
-@	sta tile.age,x
-	dex
-	bpl @-
-	ldx #3
+	ldx #4
 @	sta tile.history,x
 	dex
 	bpl @-
@@ -1894,8 +1890,10 @@ draw4
 @	lda dr4table,y
 	tax
 	lda current,y
+	cmp #C_CHAREMPTY
+	beq draw4_next
 	save
-	dey
+draw4_next dey
 	bpl @-
 	rts
 
@@ -1905,15 +1903,17 @@ draw5_loop
 	lda dr5table,y
 	tax
 	lda current,y
+	cmp #C_CHAREMPTY
+	beq draw5_next
 	save
-	dey
+draw5_next dey
 	bpl draw5_loop
 	rts
 
 dr5table
 :5	dta 0+:1*32, 1+:1*32, 2+:1*32, 3+:1*32, 4+:1*32
 
-dr4table	
+dr4table
 :4	dta 0+:1*32, 1+:1*32, 2+:1*32, 3+:1*32
 
 draw3
@@ -1922,10 +1922,12 @@ draw3
 @	lda dr3table,y
 	tax
 	lda current,y
+	cmp #C_CHAREMPTY
+	beq draw3_next
 	save
-	dey
+draw3_next dey
 	bpl @-
-	rts	
+		rts
 
 dr3table
 :3	dta 0+:1*32, 1+:1*32, 2+:1*32
@@ -2067,8 +2069,8 @@ x2	jsr choose_tile_type
 .proc	choose_tile_type
 	lda tile.opening_pending
 	beq regular_pick
-	dec tile.opening_pending
 	jsr choose_safe_type
+	dec tile.opening_pending
 	bcc regular_pick
 	sta tile.candidate
 	jsr remember_tile_type
@@ -2083,46 +2085,24 @@ regular_pick
 	jsr remember_tile_type
 	lda tile.candidate
 	rts
-@	mva #0 tile.roll_count
-roll_again
+@
+	mva #0 tile.reroll_count
+candidate_roll
 	lda random
 	and #tile.C_TYPE_CAPACITY-1
-	a_ge tile.maxtype roll_failed
+	a_ge tile.maxtype candidate_roll
 	tax
 	lda tile.type_pool,x
 	sta tile.candidate
 	jsr candidate_is_blocked
-	bcs roll_failed
-	ldx tile.candidate
-	lda tile.age,x
-	a_ge #15 accept_candidate
-	clc
-	adc #1
-	sta tile.weight
-	lda random
-	and #$0f
-	a_ge tile.weight roll_failed
+	bcc accept_candidate
+	lda tile.reroll_count
+	cmp #4
+	beq accept_candidate
+	inc tile.reroll_count
+	jmp candidate_roll
 
 accept_candidate
-	jsr remember_tile_type
-	lda tile.candidate
-	rts
-
-roll_failed
-	inc tile.roll_count
-	lda tile.roll_count
-	a_lt #32 roll_again
-
-	ldx #0
-fallback_pick
-	lda tile.type_pool,x
-	sta tile.candidate
-	jsr candidate_is_blocked
-	bcc accept_candidate
-	inx
-	cpx tile.maxtype
-	bne fallback_pick
-	mva #0 tile.candidate
 	jsr remember_tile_type
 	lda tile.candidate
 	rts
@@ -2208,32 +2188,19 @@ inactive_type
 .endp
 
 .proc	candidate_is_blocked
-	lda tile.maxtype
-	a_lt #2 no_history
-	sub #1
-	a_lt #4 @+
-	lda #4
-@	a_lt tile.history_count @+
 	lda tile.history_count
-@	sta tile.check_count
+	beq no_history
+	sta tile.check_count
 	ldx #0
-@	x_ge tile.check_count check_streak
+history_scan
+	cpx tile.check_count
+	bcs history_allowed
 	lda tile.candidate
 	cmp tile.history,x
 	beq blocked
 	inx
-	jmp @-
-
-check_streak
-	lda tile.history_count
-	a_lt #2 allowed
-	lda tile.history
-	cmp tile.history+1
-	bne allowed
-	lda tile.candidate
-	cmp tile.history
-	beq blocked
-allowed
+	jmp history_scan
+history_allowed
 	clc
 	rts
 blocked
@@ -2245,7 +2212,7 @@ no_history
 .endp
 
 .proc	remember_tile_type
-	ldx #3
+	ldx #4
 @	lda tile.history-1,x
 	sta tile.history,x
 	dex
@@ -2253,18 +2220,10 @@ no_history
 	lda tile.candidate
 	sta tile.history
 	lda tile.history_count
-	a_ge #4 @+
+	cmp #5
+	beq history_count_ready
 	inc tile.history_count
-@	ldx #0
-@	lda tile.age,x
-	cmp #15
-	beq @+
-	inc tile.age,x
-@	inx
-	cpx #tile.C_TYPE_CAPACITY
-	bne @-
-	ldx tile.candidate
-	mva #0 tile.age,x
+history_count_ready
 	rts
 .endp
 
@@ -2323,6 +2282,7 @@ no_history
 .local	tile
 C_BUFFSIZE	equ 6	;size of buffer
 C_TYPE_CAPACITY	equ 32	;candidate RNG supports up to 32 selectable types
+C_TILE_TYPE_COUNT	equ 20
 addresses
 :20		dta a(tile:1)
 sizes		dta 3,3,3,3,2,2,2,4
@@ -2332,6 +2292,8 @@ dsizes		dta 9,9,9,9,4,4,4,16
 		dta 9,9	;normal
 		dta 16,16,16,9,25,9,9,9,9,9
 type		dta 1
+placed_count
+:C_TILE_TYPE_COUNT	dta 0
 buffer
 :25*C_BUFFSIZE	dta " "
 typebuff	
@@ -2349,8 +2311,7 @@ opening_pending	dta 0
 history_count	dta 0
 check_count	dta 0
 candidate	dta 0
-roll_count	dta 0
-weight	dta 0
+reroll_count	dta 0
 safe_count	dta 0
 safe_index	dta 0
 safe_cursor	dta 0
@@ -2360,9 +2321,7 @@ stage_tens	dta 0
 type_pool
 :C_TYPE_CAPACITY	dta 0
 history
-:4	dta 0
-age
-:C_TYPE_CAPACITY	dta 0
+:5	dta 0
 next	;next index - helps to cycle the buffer
 :C_BUFFSIZE-1	dta :1+1
 		dta 0
@@ -2555,6 +2514,11 @@ x0	rts
 .proc 	game_init
 	mva #0 nmien		
 	sta dmactl
+	ldx #tile.C_TILE_TYPE_COUNT-1
+	lda #0
+@ 	sta tile.placed_count,x
+	dex
+	bpl @-
 	mva #$fe portb	;osrom off, basicrom off
 	mwa #NMI $fffa
 
