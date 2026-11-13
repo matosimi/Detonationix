@@ -5,7 +5,8 @@
 	.ifndef integrated
 	integrated = 0
 w1	equ $a4
-w1	equ $a4
+ntsc	equ $a8
+ntsctimer	equ $a9
 	eif
 	
 	icl "dtnx_pg.h"
@@ -411,8 +412,16 @@ VBL
 	;mva #@dmactl(standard|dma|lineX1|players|missiles) dmactl	;set new screen width
 	mva #scr40 dmactl 
 	inc cloc		;little timer
-	inc 20
-
+	
+	lda ntsc
+	bne playpal
+	inc ntsctimer
+	lda ntsctimer
+	a_ge #6 deadtick
+playpal	inc 20		;world timer
+	jmp cont		
+deadtick	mva #255 ntsctimer
+cont
 ; Initial values
 
 	lda >fnt+$400*$00
@@ -773,6 +782,9 @@ mxstage_last
 .endl
 
 	ift integrated == 0
+.proc	getcolor
+	rts
+.endp
 	run main
 	eif
 

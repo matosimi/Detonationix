@@ -2391,9 +2391,20 @@ gamedli	phr
 gamevbi	phr
 	mva #$0f colpf0+4
 	sta wsync
-	inc 20
+	
+	lda ntsc
+	bne playpal
+	inc ntsctimer
+	lda ntsctimer
+	a_ge #6 deadtick
+playpal	inc 20
 	inc gcounter
 	inc ccounter
+	jmp cont		
+deadtick	mva #255 ntsctimer
+
+cont
+	
 	mva >gamefont chbase
 c60	mva #$ec colpf0
 c61	mva #$e4 colpf0+1
