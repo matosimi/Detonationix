@@ -12,6 +12,7 @@ w1	equ $a4
 	ift integrated == 1
 begin
 	eif
+
 	org $f0
 
 fcnt	.ds 2
@@ -125,6 +126,8 @@ stop
 	;cli			;IRQ enabled
 
 	rts			;return to ... DOS
+
+
 
 
 ; ---	DLI PROGRAM
@@ -295,20 +298,20 @@ dli9 ;text part
 	sta wsync		
 	lda >textfnt	
 	sta chbase
-	mva #$6c colpm3
+c50	mva #$6c colpm3
 	mva #$2c hposp3
 	mva #$d2 hposm3
 	mva #$01 $d01b ;prior
 	
-.rept 6,#
+	.rept 6,#
 	sta wsync
-	mva #$60+:1*2 colbak
-.endr	
+c3:1	mva #$60+:1*2 colbak
+	.endr	
 	sta wsync
 	mva #$00 colbak
 
 	mva #$0e color1
-	mva #$e2 color2
+c36	mva #$e2 color2
 	
 	DLINEW dli10 1 0 0
 
@@ -318,20 +321,20 @@ dli10	sta regA
 	;mva #$0e color1
 	mva #$00 color2
 	sta wsync
-	mva #$34 colpm0
+c37	mva #$34 colpm0
 	;sta colpm1
 :4	sta wsync
 	mva cl0:#$36 colpm0
 	;sta colpm1
 :7	sta wsync
-	mva #$34 colpm0
+c38	mva #$34 colpm0
 	;sta colpm1
 	DLINEW dli11 1 0 0 
 
 dli11	sta regA
 	sta wsync	
 	;mva #$0f color1
-	mva #$e2 color2
+c39	mva #$e2 color2
 	mva joy_control.selector+2 hposp0
 	DLINEW dli_stage_set 1 0 0 
 
@@ -341,16 +344,16 @@ dli_stage_set
 	;mva #$0c color1
 	mva #$00 color2
 	sta wsync
-	mva #$34 colpm0
+c40	mva #$34 colpm0
 	;sta colpm1
 :4	sta wsync
 	mva cl1:#$36 colpm0
 	;sta colpm1
 :7	sta wsync
-	mva #$34 colpm0
+c41	mva #$34 colpm0
 	;sta colpm1
 	;mva #$0e color1
-	mva #$e2 color2
+c42	mva #$e2 color2
 	DLINEW dli12 1 0 0 
 
 dli12	sta regA
@@ -368,10 +371,10 @@ dli13	sta regA
 
 dli14	
 	sta regA
-.rept 6,#
+	.rept 6,#,#+3
 	sta wsync
-	mva #$60+10-:1*2 colbak
-.endr
+c4:2	mva #$60+10-:1*2 colbak
+	.endr
 	sta wsync
 	mva #0 colbak
 	lda regA
@@ -462,6 +465,7 @@ x4	lda #$00
 	and #$06
 	eor #$36
 	add #2
+	getcolor
 	ldx joy_control.line
 	cpx #2
 	beq @+
@@ -504,22 +508,21 @@ quit
 x0	rts
 	
 set_active 
+	getcolor #$36 
+	sta DLI.cl0
+	sta DLI.cl1
+
 	lda line
 	cmp #1
 	beq @+
-	mva #$36 DLI.cl0
-	sta DLI.cl1
-	;mva #$56 DLI.cl1
+	
 	mva item+2 item
 	mva selector+2 selector
 	rts
-@	;mva #$56 DLI.cl0
-	mva #$36 DLI.cl1
-	sta DLI.cl0
+@	
 	mva item+1 item
 	mva selector+1 selector
 	rts
-	
 	
 left	lda item
 	cmp #2 ;last item
@@ -565,8 +568,7 @@ pmright	ldy #5
 	jsr delay
 	rts
 	
-delay	pause 5 ;todo: add debounce
-;TODO: add keyboard, consol controls
+delay	pause 5 
 	rts
 	
 selector	dta $3a,$3a,$3a

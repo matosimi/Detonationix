@@ -118,18 +118,39 @@ debug_start_stage	equ 0	;0=off, 1-99 within selected stage set
 
 	org code
 .local	init
-	mwa #idl $230
+	detect_video_system
+	lda ntsc
+	bne pal
+	;use ntsc colors
 	ldx #8
+@	mva icolors_ntsc,x $2c0,x
+	dex
+	bpl @- 
+	jmp ntsc_cont
+	
+pal	ldx #8
 @	mva icolors,x $2c0,x
 	dex
 	bpl @-
+	
+ntsc_cont	mwa #idl $230
 	mva >initfnt $2f4	;chbase
 	mva #$80 $26f	;grprior gr.10
 	mva #33 $22f	;sdmctl dma+narrow
 	pause 0
 	mva #$ff portb ;turn on osrom a load next block
+	rts
 	
-	;detect video system
+icolors	dta $00,$e4,$e2,$e6,$08,$0c,$04,$ee,$e8
+icolors_ntsc
+	dta $00,$f4,$f2,$f6,$08,$0c,$04,$fe,$f8
+idl	
+:9	dta $70
+	dta $42,a(dtnx4bpp)
+:9	dta 2
+	dta $41,a(idl)
+	
+.proc	detect_video_system
 	mva #0 ntsc
 	sta ntsctimer
 	ldx 20
@@ -146,14 +167,8 @@ x2	cpx 20
 	rts
 sys_ntsc	mva #0 ntsc
 	rts
+.endp
 	
-icolors	dta $00,$e4,$e2,$e6,$08,$0c,$04,$ee,$e8
-
-idl	
-:9	dta $70
-	dta $42,a(dtnx4bpp)
-:9	dta 2
-	dta $41,a(idl)
 .endl
 
 	ini code ;init
@@ -263,7 +278,8 @@ d0
 	ini relocation
 	
 	org game
-
+	ntsc_recolor
+	
 .local	game_cycle
 	
 title	pause 2
@@ -410,7 +426,9 @@ go_delete
 	delete_current_tile	;delete next tile
 	
 	ldx step
-	lda ypath2+1,x	;skip delete if not drawn on next frame
+	lda ypath2,x
+	bmi go_next_frame	;skip delete if not drawn
+	lda ypath2+1,x	;keep tile if not drawn on next frame
 	bmi go_next_frame
 
 	mva ypath2,x ypos
@@ -2377,10 +2395,10 @@ gamevbi	phr
 	inc gcounter
 	inc ccounter
 	mva >gamefont chbase
-	mva #$ec colpf0
-	mva #$e4 colpf0+1
-	mva #$38 colpf0+2
-	mva #$76 colpf0+3
+c60	mva #$ec colpf0
+c61	mva #$e4 colpf0+1
+c62	mva #$38 colpf0+2
+c63	mva #$76 colpf0+3
 	mva #$00 colpf0+4
 :4	sta colpm0+:1
 
@@ -2539,7 +2557,8 @@ x0	rts
 	mva #8 consol
 	
 :4	mva #64+32*:1 hposp0+:1
-:4	mva #$18 colpm0+:1
+	getcolor #$18
+:4	sta colpm0+:1
 :4	mva #3 sizep0+:1
 
 	rts
@@ -3736,9 +3755,8 @@ C_LUM	equ $8
 	dta [:1+1]*$10+C_LUM
 	dta :1*$10+C_LUM
 :6	dta [:1+1]*$10+C_LUM
-
 .endr
-
+pcolors_end
 
 	ift debug_tiledemo==1
 .proc	tiledemo
@@ -3774,6 +3792,86 @@ x1	mva tp tile.type
 tp	dta 0
 .endp	
 	eif
+	
+	
+;Converts a PAL color value in A to its NTSC equivalent.
+.proc	getcolor (.byte a) .reg
+pptr	lsr @
+	stx ntsccolor
+	tax
+	lda ntsccolors128,x
+	ldx ntsccolor
+	rts
+
+.proc	setpal
+	mva #{rts} pptr
+	rts
+.endp
+.endp
+
+ntsccolor	dta 0
+
+.proc	ntsc_recolor
+	lda ntsc
+	beq @+
+	getcolor.setpal
+	rts
+@	ldx #(colorptrtable_end-colorptrtable)/2-1
+colorloop	txa
+	asl @
+	tay
+	mwa colorptrtable,y w1
+	ldy #1
+	lda (w1),y
+	getcolor
+	sta (w1),y
+	dex
+	bpl colorloop
+	;rainbow colors
+	ldy #(pcolors_end-pcolors)-1
+@	lda pcolors,y
+	getcolor
+	sta pcolors,y
+	dey
+	bne @-
+	rts
+
+colorptrtable
+:8	dta a(title_g2f.NMI.c:1)
+	dta a(title_g2f.DLI.c8),a(title_g2f.DLI.c9)
+	
+:10	dta a(title_g2f.DLI.c1:1)
+:8	dta a(title_g2f.DLI.c2:1)
+:10	dta a(title_g2f.DLI.c3:1)
+:9	dta a(title_g2f.DLI.c4:1)
+	dta a(title_g2f.DLI.cl0-1)
+	dta a(title_g2f.DLI.cl1-1)
+	dta a(title_g2f.DLI.c50)
+:4	dta a(c6:1)
+colorptrtable_end
+
+.endp
+
+ntsccolors128	
+:8	dta #*2
+:8	dta #*2+$20
+:8	dta #*2+$30
+:8	dta #*2+$40
+:8	dta #*2+$50
+:8	dta #*2+$60
+:8	dta #*2+$70
+:8	dta #*2+$80
+:8	dta #*2+$90
+:8	dta #*2+$a0
+:8	dta #*2+$b0
+:5	dta #*2+$d0+2
+:3	dta #*2+$d0+$a
+:4	dta #*2+$e0+2
+:4	dta #*2+$e0+8
+:4	dta #*2+$12
+	dta $e8,$1a,$1c,$1e
+:8	dta #*2+$f0
+:8	dta #*2+$20
 
 ;compressor: https://github.com/antoniovillena/zx7mini
 ;http://xxl.atari.pl/zx7-decompressor/
